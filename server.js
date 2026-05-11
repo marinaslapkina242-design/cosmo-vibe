@@ -34,6 +34,12 @@ pool.query(`
     video_id INTEGER REFERENCES videos(id) ON DELETE CASCADE,
     PRIMARY KEY (user_id, video_id)
   );
+  CREATE TABLE IF NOT EXISTS subscriptions (
+    follower_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    target_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT NOW(),
+    PRIMARY KEY (follower_id, target_id)
+  );
 `).then(() => console.log('БД готова')).catch(console.error);
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -55,6 +61,10 @@ const makeToken = (u) => jwt.sign({ id: u.id, username: u.username, email: u.ema
 function auth(req, res, next) {
   try { req.user = jwt.verify((req.headers.authorization || '').replace('Bearer ', ''), process.env.JWT_SECRET); next(); }
   catch { res.status(401).json({ error: 'Нет доступа' }); }
+}
+function optionalAuth(req, res, next) {
+  try { req.user = jwt.verify((req.headers.authorization || '').replace('Bearer ', ''), process.env.JWT_SECRET); } catch {}
+  next();
 }
 
 app.post('/api/auth/register', async (req, res) => {
@@ -82,7 +92,7 @@ app.post('/api/auth/verify', async (req, res) => {
     if (Date.now() > Number(u.code_expires)) return res.status(400).json({ error: 'Код устарел' });
     await pool.query('UPDATE users SET verified=true,code=NULL,code_expires=NULL WHERE id=$1', [u.id]);
     notifyOwner(u.username, u.email).catch(() => {});
-    res.json({ token: makeToken(u), user: { id: u.id, username: u.username, email: u.email } });
+    res.json({ token: makeToken(u), user: { id: u.id, username: u.username } });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -109,7 +119,7 @@ app.post('/api/auth/login-verify', async (req, res) => {
     if (u.code !== code) return res.status(400).json({ error: 'Неверный код' });
     if (Date.now() > Number(u.code_expires)) return res.status(400).json({ error: 'Код устарел' });
     await pool.query('UPDATE users SET code=NULL,code_expires=NULL WHERE id=$1', [u.id]);
-    res.json({ token: makeToken(u), user: { id: u.id, username: u.username, email: u.email } });
+    res.json({ token: makeToken(u), user: { id: u.id, username: u.username } });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -131,13 +141,12 @@ app.get('/api/videos', async (req, res) => {
     let q = 'SELECT v.*,u.username FROM videos v JOIN users u ON u.id=v.user_id WHERE 1=1';
     const p = [];
     if (category !== 'all') { p.push(category); q += ` AND v.category=$${p.length}`; }
-    if (search) { p.push(`%${search}%`); q += ` AND (v.title ILIKE $${p.length} OR v.description ILIKE $${p.length})`; }
+    if (search) { p.push(`%${search}%`); q += ` AND (v.title ILIKE $${p.length} OR u.username ILIKE $${p.length})`; }
     p.push(+limit); q += ` ORDER BY v.created_at DESC LIMIT $${p.length}`;
     res.json((await pool.query(q, p)).rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ✅ ВАЖНО: /upload должен быть ВЫШЕ /:id
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } });
 app.post('/api/videos/upload', auth, upload.single('video'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Файл не выбран' });
@@ -146,10 +155,8 @@ app.post('/api/videos/upload', auth, upload.single('video'), async (req, res) =>
   try {
     const result = await new Promise((ok, fail) => {
       const s = cloudinary.uploader.upload_stream({
-        resource_type: 'video',
-        folder: 'cosmovibe',
-        format: 'mp4',
-        transformation: [{ video_codec: 'h264', audio_codec: 'aac' }]
+        resource_type: 'video', folder: 'cosmovibe',
+        format: 'mp4', transformation: [{ video_codec: 'h264', audio_codec: 'aac' }]
       }, (err, r) => err ? fail(err) : ok(r));
       s.end(req.file.buffer);
     });
@@ -194,6 +201,55 @@ app.post('/api/videos/:id/like', auth, async (req, res) => {
       await pool.query('UPDATE videos SET likes=likes+1 WHERE id=$1', [req.params.id]);
       res.json({ liked: true });
     }
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── CHANNELS & SUBSCRIPTIONS ──────────────────────────────────
+app.get('/api/channel/:username', optionalAuth, async (req, res) => {
+  try {
+    const { rows: users } = await pool.query('SELECT id, username, created_at FROM users WHERE username=$1', [req.params.username]);
+    if (!users[0]) return res.status(404).json({ error: 'Канал не найден' });
+    const u = users[0];
+    const { rows: videos } = await pool.query(
+      'SELECT v.*, u.username FROM videos v JOIN users u ON u.id=v.user_id WHERE v.user_id=$1 ORDER BY v.created_at DESC', [u.id]
+    );
+    const { rows: subRows } = await pool.query('SELECT COUNT(*) FROM subscriptions WHERE target_id=$1', [u.id]);
+    const subscriberCount = parseInt(subRows[0].count);
+    let isSubscribed = false;
+    if (req.user) {
+      const { rows: s } = await pool.query('SELECT 1 FROM subscriptions WHERE follower_id=$1 AND target_id=$2', [req.user.id, u.id]);
+      isSubscribed = s.length > 0;
+    }
+    res.json({ user: u, videos, subscriberCount, isSubscribed });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/channel/:username/subscribe', auth, async (req, res) => {
+  try {
+    const { rows: users } = await pool.query('SELECT id FROM users WHERE username=$1', [req.params.username]);
+    if (!users[0]) return res.status(404).json({ error: 'Не найдено' });
+    const targetId = users[0].id;
+    if (targetId === req.user.id) return res.status(400).json({ error: 'Нельзя подписаться на себя' });
+    const exists = await pool.query('SELECT 1 FROM subscriptions WHERE follower_id=$1 AND target_id=$2', [req.user.id, targetId]);
+    if (exists.rows.length) {
+      await pool.query('DELETE FROM subscriptions WHERE follower_id=$1 AND target_id=$2', [req.user.id, targetId]);
+      res.json({ subscribed: false });
+    } else {
+      await pool.query('INSERT INTO subscriptions(follower_id,target_id) VALUES($1,$2)', [req.user.id, targetId]);
+      res.json({ subscribed: true });
+    }
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/channel/:username/subscribers', async (req, res) => {
+  try {
+    const { rows: users } = await pool.query('SELECT id FROM users WHERE username=$1', [req.params.username]);
+    if (!users[0]) return res.status(404).json({ error: 'Не найдено' });
+    const { rows } = await pool.query(
+      'SELECT u.id, u.username FROM subscriptions s JOIN users u ON u.id=s.follower_id WHERE s.target_id=$1 ORDER BY s.created_at DESC',
+      [users[0].id]
+    );
+    res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
