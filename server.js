@@ -137,15 +137,7 @@ app.get('/api/videos', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get('/api/videos/:id', async (req, res) => {
-  try {
-    const { rows } = await pool.query('SELECT v.*,u.username FROM videos v JOIN users u ON u.id=v.user_id WHERE v.id=$1', [req.params.id]);
-    if (!rows[0]) return res.status(404).json({ error: 'Не найдено' });
-    await pool.query('UPDATE videos SET views=views+1 WHERE id=$1', [req.params.id]);
-    rows[0].views++; res.json(rows[0]);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
+// ✅ ВАЖНО: /upload должен быть ВЫШЕ /:id
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } });
 app.post('/api/videos/upload', auth, upload.single('video'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Файл не выбран' });
@@ -162,6 +154,15 @@ app.post('/api/videos/upload', auth, upload.single('video'), async (req, res) =>
       [req.user.id, title, description, category, result.secure_url, thumb, result.public_id, Math.round(result.duration || 0)]
     );
     res.json(rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/videos/:id', async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT v.*,u.username FROM videos v JOIN users u ON u.id=v.user_id WHERE v.id=$1', [req.params.id]);
+    if (!rows[0]) return res.status(404).json({ error: 'Не найдено' });
+    await pool.query('UPDATE videos SET views=views+1 WHERE id=$1', [req.params.id]);
+    rows[0].views++; res.json(rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
