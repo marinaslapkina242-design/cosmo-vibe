@@ -145,7 +145,12 @@ app.post('/api/videos/upload', auth, upload.single('video'), async (req, res) =>
   if (!title) return res.status(400).json({ error: 'Укажи название' });
   try {
     const result = await new Promise((ok, fail) => {
-      const s = cloudinary.uploader.upload_stream({ resource_type: 'video', folder: 'cosmovibe' }, (err, r) => err ? fail(err) : ok(r));
+      const s = cloudinary.uploader.upload_stream({
+        resource_type: 'video',
+        folder: 'cosmovibe',
+        format: 'mp4',
+        transformation: [{ video_codec: 'h264', audio_codec: 'aac' }]
+      }, (err, r) => err ? fail(err) : ok(r));
       s.end(req.file.buffer);
     });
     const thumb = result.secure_url.replace(/\.[^/.]+$/, '.jpg').replace('/upload/', '/upload/w_640/');
