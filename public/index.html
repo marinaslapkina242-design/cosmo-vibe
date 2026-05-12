@@ -726,14 +726,16 @@ const ICONS = {
   comment: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`,
 };
 
-function badgeHTML(subCount) {
-  if (!subCount && subCount !== 0) return '';
+function badgeHTML(subCount, username) {
+  if (username === 'Creator CosmoVibe') {
+    return `<span class="badge-check badge-blue" title="Голубая галочка">${ICONS.check}</span>`;
+  }
   const n = parseInt(subCount) || 0;
   if (n >= 10000) return `<span class="badge-check badge-gold" title="Золотая галочка — 10 000+ подписчиков">${ICONS.check}</span>`;
   if (n >= 500)   return `<span class="badge-check badge-blue" title="Голубая галочка — 500+ подписчиков">${ICONS.check}</span>`;
   if (n >= 50)    return `<span class="badge-check badge-grey" title="Серая галочка — 50+ подписчиков">${ICONS.check}</span>`;
   return '';
-}
+ }
 
 window.onload = () => { updateUI(); loadVideos(); if(token) pollNotifs(); };
 
