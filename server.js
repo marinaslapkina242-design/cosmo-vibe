@@ -44,6 +44,7 @@ pool.query(`
     id SERIAL PRIMARY KEY,
     video_id INTEGER REFERENCES videos(id) ON DELETE CASCADE,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    parent_id INTEGER REFERENCES comments(id) ON DELETE CASCADE,
     text TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT NOW()
   );
@@ -58,6 +59,9 @@ pool.query(`
     created_at TIMESTAMP DEFAULT NOW()
   );
 `).then(() => console.log('БД готова')).catch(console.error);
+
+// Migration: add parent_id to comments if missing
+pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS parent_id INTEGER REFERENCES comments(id) ON DELETE CASCADE`).catch(() => {});
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const notifyOwner = (username, email) => resend.emails.send({
@@ -115,7 +119,9 @@ app.post('/api/auth/login', async (req, res) => {
 app.get('/api/videos', async (req, res) => {
   const { category = 'all', search = '', limit = 24 } = req.query;
   try {
-    let q = 'SELECT v.*,u.username FROM videos v JOIN users u ON u.id=v.user_id WHERE 1=1';
+    let q = `SELECT v.*, u.username,
+      (SELECT COUNT(*) FROM subscriptions WHERE target_id=u.id) as subscriber_count
+      FROM videos v JOIN users u ON u.id=v.user_id WHERE 1=1`;
     const p = [];
     if (category !== 'all') { p.push(category); q += ` AND v.category=$${p.length}`; }
     if (search) { p.push(`%${search}%`); q += ` AND (v.title ILIKE $${p.length} OR u.username ILIKE $${p.length})`; }
@@ -148,7 +154,11 @@ app.post('/api/videos/upload', auth, upload.single('video'), async (req, res) =>
 
 app.get('/api/videos/:id', optAuth, async (req, res) => {
   try {
-    const { rows } = await pool.query('SELECT v.*,u.username,u.id as author_id FROM videos v JOIN users u ON u.id=v.user_id WHERE v.id=$1', [req.params.id]);
+    const { rows } = await pool.query(`
+      SELECT v.*, u.username, u.id as author_id,
+        (SELECT COUNT(*) FROM subscriptions WHERE target_id=u.id) as author_subscriber_count
+      FROM videos v JOIN users u ON u.id=v.user_id WHERE v.id=$1
+    `, [req.params.id]);
     if (!rows[0]) return res.status(404).json({ error: 'Не найдено' });
     await pool.query('UPDATE videos SET views=views+1 WHERE id=$1', [req.params.id]);
     rows[0].views++;
@@ -194,7 +204,9 @@ app.post('/api/videos/:id/like', auth, async (req, res) => {
 app.get('/api/videos/:id/comments', async (req, res) => {
   try {
     const { rows } = await pool.query(
-      'SELECT c.*,u.username FROM comments c JOIN users u ON u.id=c.user_id WHERE c.video_id=$1 ORDER BY c.created_at ASC',
+      `SELECT c.*, u.username,
+        (SELECT COUNT(*) FROM subscriptions WHERE target_id=c.user_id) as subscriber_count
+       FROM comments c JOIN users u ON u.id=c.user_id WHERE c.video_id=$1 ORDER BY c.created_at ASC`,
       [req.params.id]
     );
     res.json(rows);
@@ -202,19 +214,25 @@ app.get('/api/videos/:id/comments', async (req, res) => {
 });
 
 app.post('/api/videos/:id/comments', auth, async (req, res) => {
-  const { text } = req.body;
+  const { text, parent_id } = req.body;
   if (!text || !text.trim()) return res.status(400).json({ error: 'Пустой комментарий' });
   try {
     const vid = await pool.query('SELECT user_id FROM videos WHERE id=$1', [req.params.id]);
     if (!vid.rows[0]) return res.status(404).json({ error: 'Видео не найдено' });
     const { rows } = await pool.query(
-      'INSERT INTO comments(video_id,user_id,text) VALUES($1,$2,$3) RETURNING *',
-      [req.params.id, req.user.id, text.trim()]
+      'INSERT INTO comments(video_id,user_id,text,parent_id) VALUES($1,$2,$3,$4) RETURNING *',
+      [req.params.id, req.user.id, text.trim(), parent_id || null]
     );
     const comment = rows[0];
     const userRow = await pool.query('SELECT username FROM users WHERE id=$1', [req.user.id]);
     comment.username = userRow.rows[0].username;
-    await createNotification(vid.rows[0].user_id, req.user.id, 'comment', parseInt(req.params.id), comment.id);
+    if (parent_id) {
+      // Notify parent comment author
+      const parentRow = await pool.query('SELECT user_id FROM comments WHERE id=$1', [parent_id]);
+      if (parentRow.rows[0]) await createNotification(parentRow.rows[0].user_id, req.user.id, 'reply', parseInt(req.params.id), comment.id);
+    } else {
+      await createNotification(vid.rows[0].user_id, req.user.id, 'comment', parseInt(req.params.id), comment.id);
+    }
     res.json(comment);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -264,7 +282,11 @@ app.get('/api/channel/:username', optAuth, async (req, res) => {
     const { rows: users } = await pool.query('SELECT id,username,created_at FROM users WHERE username=$1', [req.params.username]);
     if (!users[0]) return res.status(404).json({ error: 'Канал не найден' });
     const u = users[0];
-    const { rows: videos } = await pool.query('SELECT v.*,u.username FROM videos v JOIN users u ON u.id=v.user_id WHERE v.user_id=$1 ORDER BY v.created_at DESC', [u.id]);
+    const { rows: videos } = await pool.query(`
+      SELECT v.*, u.username,
+        (SELECT COUNT(*) FROM subscriptions WHERE target_id=u.id) as subscriber_count
+      FROM videos v JOIN users u ON u.id=v.user_id WHERE v.user_id=$1 ORDER BY v.created_at DESC
+    `, [u.id]);
     const { rows: subRows } = await pool.query('SELECT COUNT(*) FROM subscriptions WHERE target_id=$1', [u.id]);
     let isSubscribed = false;
     if (req.user) {
@@ -298,8 +320,27 @@ app.get('/api/channel/:username/subscribers', async (req, res) => {
     const { rows: users } = await pool.query('SELECT id FROM users WHERE username=$1', [req.params.username]);
     if (!users[0]) return res.status(404).json({ error: 'Не найдено' });
     const { rows } = await pool.query(
-      'SELECT u.id,u.username FROM subscriptions s JOIN users u ON u.id=s.follower_id WHERE s.target_id=$1 ORDER BY s.created_at DESC',
+      `SELECT u.id, u.username,
+        (SELECT COUNT(*) FROM subscriptions WHERE target_id=u.id) as subscriber_count
+       FROM subscriptions s JOIN users u ON u.id=s.follower_id WHERE s.target_id=$1 ORDER BY s.created_at DESC`,
       [users[0].id]
+    );
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// USERS SEARCH
+app.get('/api/users/search', async (req, res) => {
+  const { q = '' } = req.query;
+  try {
+    const { rows } = await pool.query(
+      `SELECT u.id, u.username,
+        (SELECT COUNT(*) FROM subscriptions WHERE target_id=u.id) as subscriber_count,
+        (SELECT COUNT(*) FROM videos WHERE user_id=u.id) as video_count
+       FROM users u
+       WHERE u.username ILIKE $1
+       ORDER BY subscriber_count DESC LIMIT 20`,
+      [`%${q}%`]
     );
     res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
