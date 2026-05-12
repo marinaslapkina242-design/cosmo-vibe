@@ -149,6 +149,92 @@ body::before {
 .badge-blue  { background:#1da1f2; box-shadow:0 0 8px rgba(29,161,242,0.6); }
 .badge-gold  { background:linear-gradient(135deg,#ffd700,#ffaa00); box-shadow:0 0 10px rgba(255,215,0,0.7); }
 
+/* ── CRYSTAL OWNER FRAME (Maksim) ── */
+@property --crystal-angle {
+  syntax: '<angle>'; initial-value: 0deg; inherits: false;
+}
+@keyframes crystal-spin { to { --crystal-angle: 360deg; } }
+.crystal-frame {
+  position: relative;
+  border-radius: 50%;
+  padding: 2px;
+  background: conic-gradient(from var(--crystal-angle),
+    #7c5cfc, #00d4ff, #b48aff, #ffffff, #00d4ff, #7c5cfc,
+    #ffd700, #00d4ff, #7c5cfc);
+  animation: crystal-spin 3s linear infinite;
+  box-shadow:
+    0 0 16px rgba(0,212,255,0.7),
+    0 0 32px rgba(124,92,252,0.5),
+    0 0 8px rgba(255,255,255,0.3) inset;
+}
+.crystal-frame::before {
+  content:'';
+  position:absolute;
+  inset:0;
+  border-radius:50%;
+  background: conic-gradient(from calc(var(--crystal-angle) + 60deg),
+    transparent 0deg, rgba(255,255,255,0.6) 30deg, transparent 60deg,
+    transparent 120deg, rgba(0,212,255,0.4) 150deg, transparent 180deg,
+    transparent 240deg, rgba(180,138,255,0.5) 270deg, transparent 300deg);
+  animation: crystal-spin 3s linear infinite;
+  mix-blend-mode: overlay;
+}
+.crystal-frame-inner {
+  width: 100%; height: 100%; border-radius: 50%;
+  background: linear-gradient(135deg,var(--accent),var(--accent2));
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; color: #fff; overflow: hidden;
+}
+/* Nav avatar crystal */
+.user-avatar-btn.crystal-nav {
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0;
+  width: 42px; height: 42px;
+}
+/* Card avatar crystal */
+.card-avatar.crystal-card {
+  background: none !important;
+  box-shadow: none !important;
+  border: none !important;
+  padding: 0;
+  width: 28px; height: 28px;
+}
+/* Comment avatar crystal */
+.comment-avatar.crystal-comment {
+  background: none !important;
+  box-shadow: none !important;
+  border: none !important;
+  padding: 0;
+}
+/* Channel page avatar crystal */
+.ch-avatar.crystal-ch {
+  background: none !important;
+  box-shadow: none !important;
+  border: none !important;
+  padding: 3px;
+}
+/* Sidebar avatar crystal */
+.sidebar-avatar.crystal-sidebar {
+  background: none !important;
+  box-shadow: none !important;
+  border: none !important;
+  padding: 0;
+  width: 28px; height: 28px;
+}
+/* Admin delete button (visible on ALL cards for owner) */
+.card-del-admin {
+  position:absolute; top:6px; right:6px; z-index:10;
+  background:rgba(255,77,109,0.85); color:#fff; border:none;
+  border-radius:50%; width:24px; height:24px; font-size:12px;
+  cursor:pointer; display:none; align-items:center; justify-content:center;
+  box-shadow:0 2px 8px rgba(255,77,109,0.6); transition:all .2s;
+  line-height:1;
+}
+.card-del-admin:hover { background:var(--danger); transform:scale(1.1); }
+.video-card:hover .card-del-admin { display:flex; }
+
 /* ── SIDEBAR ── */
 .sidebar {
   position:fixed; top:60px; left:0; bottom:0;
@@ -777,12 +863,29 @@ const ICONS = {
   comment: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`,
 };
 
-function badgeHTML(subCount) {
+// ── OWNER (создатель сайта) ──
+const OWNER_USERNAME = 'Maksim';
+function isOwner(username) {
+  return username && username.toLowerCase() === OWNER_USERNAME.toLowerCase();
+}
+
+function badgeHTML(subCount, username) {
+  // Создатель сайта всегда получает синюю галочку
+  if (username && isOwner(username)) {
+    return `<span class="badge-check badge-blue" title="Создатель CosmоVibe ✦">${ICONS.check}</span>`;
+  }
   const n = parseInt(subCount) || 0;
-  if (n >= 10000) return `<span class="badge-check badge-gold" title="Золотая галочка — 10 000+ подписчиков">${ICONS.check}</span>`;
-  if (n >= 500)   return `<span class="badge-check badge-blue" title="Синяя галочка — 500+ подписчиков">${ICONS.check}</span>`;
-  if (n >= 50)    return `<span class="badge-check badge-grey" title="Серая галочка — 50+ подписчиков">${ICONS.check}</span>`;
+  if (n >= 10000) return `<span class="badge-check badge-gold"  title="Золотая галочка — 10 000+ подписчиков">${ICONS.check}</span>`;
+  if (n >= 500)   return `<span class="badge-check badge-blue"  title="Синяя галочка — 500+ подписчиков">${ICONS.check}</span>`;
+  if (n >= 50)    return `<span class="badge-check badge-grey"  title="Серая галочка — 50+ подписчиков">${ICONS.check}</span>`;
   return '';
+}
+
+// Crystal frame helper – оборачивает аватарку Maksim
+function crystalWrap(letter, extraClass, fontSize) {
+  return `<div class="crystal-frame ${extraClass}" style="font-size:${fontSize||'inherit'}">
+    <div class="crystal-frame-inner">${letter}</div>
+  </div>`;
 }
 
 // ── SIDEBAR ──
@@ -808,9 +911,16 @@ function updateUI() {
   document.getElementById('notifWrap').style.display = ok ? '' : 'none';
   if (ok && currentUser) {
     const l = currentUser.username[0].toUpperCase();
-    document.getElementById('navAvatar').textContent = l;
+    const navBtn = document.getElementById('navAvatar');
+    if (isOwner(currentUser.username)) {
+      // Кристальная рамка на кнопке аватарки в навбаре
+      navBtn.innerHTML = crystalWrap(l, '', '15px');
+      navBtn.style.cssText = 'background:none;border:none;box-shadow:none;padding:0;width:44px;height:44px;';
+    } else {
+      navBtn.textContent = l;
+      navBtn.style.cssText = '';
+    }
     document.getElementById('dropdownNameText').textContent = currentUser.username;
-    // load subscriber count to show badge
     fetchMySubCount();
   }
   const area = document.getElementById('commentInputArea');
@@ -1080,6 +1190,7 @@ async function loadVideos(search='') {
 function renderGrid(videos, gridId) {
   const grid = document.getElementById(gridId);
   if (!videos.length) { grid.innerHTML='<div class="empty"><div class="empty-text">Здесь пока тихо...</div></div>'; return; }
+  const amAdmin = currentUser && isOwner(currentUser.username);
   grid.innerHTML = videos.map(v => {
     const own = currentUser && v.user_id === currentUser.id;
     const dur = formatDur(v.duration);
@@ -1087,25 +1198,31 @@ function renderGrid(videos, gridId) {
       ? `<img src="${esc(v.thumbnail_url)}" loading="lazy" onerror="this.style.display='none'">`
       : `<div class="thumb-placeholder"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg></div>`;
     const initLetter = v.username ? v.username[0].toUpperCase() : '?';
-    const badge = badgeHTML(v.subscriber_count);
-    return `<div class="video-card ${own?'own':''}" data-id="${v.id}">
+    const badge = badgeHTML(v.subscriber_count, v.username);
+    const avatarEl = isOwner(v.username)
+      ? crystalWrap(initLetter, 'card-avatar crystal-card', '11px')
+      : `<div class="card-avatar" onclick="event.stopPropagation();openChannel('${esc(v.username)}')">${initLetter}</div>`;
+    const delBtn = (own || amAdmin)
+      ? `<button class="card-del-admin" onclick="delVideo(event,${v.id})" title="Удалить видео">✕</button>`
+      : '';
+    return `<div class="video-card ${own?'own':''}" data-id="${v.id}" style="position:relative">
       <div class="thumb-wrap">${thumb}${dur?`<div class="duration-badge">${dur}</div>`:''}
         <div class="hover-play"><div class="play-circle"><svg viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg></div></div>
+        ${delBtn}
       </div>
       <div class="card-meta">
-        <div class="card-author-row">
-          <div class="card-avatar" onclick="event.stopPropagation();openChannel('${esc(v.username)}')">${initLetter}</div>
-          <span class="card-username" onclick="event.stopPropagation();openChannel('${esc(v.username)}')">${esc(v.username)}</span>${badge}
+        <div class="card-author-row" onclick="event.stopPropagation();openChannel('${esc(v.username)}')">
+          ${avatarEl}
+          <span class="card-username">${esc(v.username)}</span>${badge}
         </div>
         <div class="card-title">${esc(v.title)}</div>
         <div class="card-sub"><span>${v.views} просм.</span><span style="margin-left:2px">&nbsp;·&nbsp;${v.likes} лайк.</span></div>
       </div>
-      ${own?`<button class="card-del" onclick="delVideo(event,${v.id})">✕</button>`:''}
     </div>`;
   }).join('');
   grid.querySelectorAll('.video-card').forEach(card => {
     card.addEventListener('click', e => {
-      if (e.target.closest('.card-del,.card-username,.card-avatar')) return;
+      if (e.target.closest('.card-del-admin,.card-del,.card-username,.card-author-row,.crystal-frame')) return;
       openPlayer(parseInt(card.dataset.id));
     });
   });
@@ -1116,10 +1233,12 @@ async function openPlayer(id) {
     const v = await api(`/api/videos/${id}`);
     currentVideo = v;
     document.getElementById('playerTitle').textContent = v.title;
-    const badge = badgeHTML(v.author_subscriber_count);
+    const badge = badgeHTML(v.author_subscriber_count, v.username);
+    const avatarEl = isOwner(v.username)
+      ? crystalWrap(v.username[0].toUpperCase(), '', '15px')
+      : `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`;
     document.getElementById('playerAuthor').innerHTML =
-      `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-       <span class="player-author-name">${esc(v.username)}</span>${badge}`;
+      `${avatarEl}<span class="player-author-name">${esc(v.username)}</span>${badge}`;
     document.getElementById('playerViews').textContent = v.views + ' просмотров';
     document.getElementById('likeCount').textContent = v.likes;
     document.getElementById('likeBtn').classList.toggle('liked', !!v.liked);
