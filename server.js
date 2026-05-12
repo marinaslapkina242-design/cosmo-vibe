@@ -15,6 +15,7 @@ app.use(express.json());
 app.use(express.static('public'));
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+
 pool.query(`
   CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY, username VARCHAR(50) UNIQUE NOT NULL,
@@ -39,28 +40,53 @@ pool.query(`
     created_at TIMESTAMP DEFAULT NOW(),
     PRIMARY KEY (follower_id, target_id)
   );
+  CREATE TABLE IF NOT EXISTS comments (
+    id SERIAL PRIMARY KEY,
+    video_id INTEGER REFERENCES videos(id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    text TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+  );
+  CREATE TABLE IF NOT EXISTS notifications (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    from_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    type VARCHAR(20) NOT NULL,
+    video_id INTEGER REFERENCES videos(id) ON DELETE CASCADE,
+    comment_id INTEGER REFERENCES comments(id) ON DELETE CASCADE,
+    read BOOLEAN DEFAULT false,
+    created_at TIMESTAMP DEFAULT NOW()
+  );
 `).then(() => console.log('БД готова')).catch(console.error);
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const notifyOwner = (username, email) => resend.emails.send({
   from: 'CosmоVibe <onboarding@resend.dev>', to: process.env.OWNER_EMAIL,
   subject: '🌌 НОВЫЙ ПОЛЬЗОВАТЕЛЬ!',
-  html: `<div style="background:#060612;padding:40px;font-family:sans-serif;color:#c8c0f0;border-radius:12px"><h2 style="color:#b48aff">Новый пользователь!</h2><p><b style="color:#b48aff">Имя:</b> ${username}</p><p><b style="color:#b48aff">Email:</b> ${email}</p></div>`
+  html: `<p>Имя: ${username}, Email: ${email}</p>`
 }).catch(() => {});
 
 cloudinary.config({ cloud_name: process.env.CLOUDINARY_CLOUD_NAME, api_key: process.env.CLOUDINARY_API_KEY, api_secret: process.env.CLOUDINARY_API_SECRET });
 
-const makeToken = (u) => jwt.sign({ id: u.id, username: u.username, email: u.email }, process.env.JWT_SECRET, { expiresIn: '30d' });
+const makeToken = u => jwt.sign({ id: u.id, username: u.username, email: u.email }, process.env.JWT_SECRET, { expiresIn: '30d' });
 function auth(req, res, next) {
   try { req.user = jwt.verify((req.headers.authorization || '').replace('Bearer ', ''), process.env.JWT_SECRET); next(); }
   catch { res.status(401).json({ error: 'Нет доступа' }); }
 }
-function optionalAuth(req, res, next) {
+function optAuth(req, res, next) {
   try { req.user = jwt.verify((req.headers.authorization || '').replace('Bearer ', ''), process.env.JWT_SECRET); } catch {}
   next();
 }
 
-// ── AUTH ──────────────────────────────────────────────────────
+async function createNotification(userId, fromUserId, type, videoId = null, commentId = null) {
+  if (userId === fromUserId) return;
+  await pool.query(
+    'INSERT INTO notifications(user_id,from_user_id,type,video_id,comment_id) VALUES($1,$2,$3,$4,$5)',
+    [userId, fromUserId, type, videoId, commentId]
+  ).catch(() => {});
+}
+
+// AUTH
 app.post('/api/auth/register', async (req, res) => {
   const { username, email, password } = req.body;
   if (!username || !email || !password) return res.status(400).json({ error: 'Заполни все поля' });
@@ -69,10 +95,7 @@ app.post('/api/auth/register', async (req, res) => {
     const exists = await pool.query('SELECT id FROM users WHERE email=$1 OR username=$2', [email, username]);
     if (exists.rows.length) return res.status(409).json({ error: 'Email или имя уже заняты' });
     const hash = await bcrypt.hash(password, 10);
-    const { rows } = await pool.query(
-      'INSERT INTO users (username,email,password_hash) VALUES($1,$2,$3) RETURNING *',
-      [username, email, hash]
-    );
+    const { rows } = await pool.query('INSERT INTO users(username,email,password_hash) VALUES($1,$2,$3) RETURNING *', [username, email, hash]);
     notifyOwner(username, email);
     res.json({ token: makeToken(rows[0]), user: { id: rows[0].id, username: rows[0].username } });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -88,7 +111,7 @@ app.post('/api/auth/login', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── VIDEOS ────────────────────────────────────────────────────
+// VIDEOS
 app.get('/api/videos', async (req, res) => {
   const { category = 'all', search = '', limit = 24 } = req.query;
   try {
@@ -123,12 +146,18 @@ app.post('/api/videos/upload', auth, upload.single('video'), async (req, res) =>
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get('/api/videos/:id', async (req, res) => {
+app.get('/api/videos/:id', optAuth, async (req, res) => {
   try {
-    const { rows } = await pool.query('SELECT v.*,u.username FROM videos v JOIN users u ON u.id=v.user_id WHERE v.id=$1', [req.params.id]);
+    const { rows } = await pool.query('SELECT v.*,u.username,u.id as author_id FROM videos v JOIN users u ON u.id=v.user_id WHERE v.id=$1', [req.params.id]);
     if (!rows[0]) return res.status(404).json({ error: 'Не найдено' });
     await pool.query('UPDATE videos SET views=views+1 WHERE id=$1', [req.params.id]);
-    rows[0].views++; res.json(rows[0]);
+    rows[0].views++;
+    let liked = false;
+    if (req.user) {
+      const l = await pool.query('SELECT 1 FROM likes WHERE user_id=$1 AND video_id=$2', [req.user.id, req.params.id]);
+      liked = l.rows.length > 0;
+    }
+    res.json({ ...rows[0], liked });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -145,6 +174,8 @@ app.delete('/api/videos/:id', auth, async (req, res) => {
 
 app.post('/api/videos/:id/like', auth, async (req, res) => {
   try {
+    const vid = await pool.query('SELECT user_id FROM videos WHERE id=$1', [req.params.id]);
+    if (!vid.rows[0]) return res.status(404).json({ error: 'Не найдено' });
     const exists = await pool.query('SELECT 1 FROM likes WHERE user_id=$1 AND video_id=$2', [req.user.id, req.params.id]);
     if (exists.rows.length) {
       await pool.query('DELETE FROM likes WHERE user_id=$1 AND video_id=$2', [req.user.id, req.params.id]);
@@ -153,28 +184,94 @@ app.post('/api/videos/:id/like', auth, async (req, res) => {
     } else {
       await pool.query('INSERT INTO likes VALUES($1,$2)', [req.user.id, req.params.id]);
       await pool.query('UPDATE videos SET likes=likes+1 WHERE id=$1', [req.params.id]);
+      await createNotification(vid.rows[0].user_id, req.user.id, 'like', parseInt(req.params.id));
       res.json({ liked: true });
     }
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── CHANNELS ──────────────────────────────────────────────────
-app.get('/api/channel/:username', optionalAuth, async (req, res) => {
+// COMMENTS
+app.get('/api/videos/:id/comments', async (req, res) => {
   try {
-    const { rows: users } = await pool.query('SELECT id, username, created_at FROM users WHERE username=$1', [req.params.username]);
+    const { rows } = await pool.query(
+      'SELECT c.*,u.username FROM comments c JOIN users u ON u.id=c.user_id WHERE c.video_id=$1 ORDER BY c.created_at ASC',
+      [req.params.id]
+    );
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/videos/:id/comments', auth, async (req, res) => {
+  const { text } = req.body;
+  if (!text || !text.trim()) return res.status(400).json({ error: 'Пустой комментарий' });
+  try {
+    const vid = await pool.query('SELECT user_id FROM videos WHERE id=$1', [req.params.id]);
+    if (!vid.rows[0]) return res.status(404).json({ error: 'Видео не найдено' });
+    const { rows } = await pool.query(
+      'INSERT INTO comments(video_id,user_id,text) VALUES($1,$2,$3) RETURNING *',
+      [req.params.id, req.user.id, text.trim()]
+    );
+    const comment = rows[0];
+    const userRow = await pool.query('SELECT username FROM users WHERE id=$1', [req.user.id]);
+    comment.username = userRow.rows[0].username;
+    await createNotification(vid.rows[0].user_id, req.user.id, 'comment', parseInt(req.params.id), comment.id);
+    res.json(comment);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/comments/:id', auth, async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM comments WHERE id=$1', [req.params.id]);
+    if (!rows[0]) return res.status(404).json({ error: 'Не найдено' });
+    if (rows[0].user_id !== req.user.id) return res.status(403).json({ error: 'Нет прав' });
+    await pool.query('DELETE FROM comments WHERE id=$1', [req.params.id]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// NOTIFICATIONS
+app.get('/api/notifications', auth, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT n.*, u.username as from_username, v.title as video_title
+      FROM notifications n
+      JOIN users u ON u.id=n.from_user_id
+      LEFT JOIN videos v ON v.id=n.video_id
+      WHERE n.user_id=$1
+      ORDER BY n.created_at DESC LIMIT 30
+    `, [req.user.id]);
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/notifications/read', auth, async (req, res) => {
+  try {
+    await pool.query('UPDATE notifications SET read=true WHERE user_id=$1', [req.user.id]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/notifications/count', auth, async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT COUNT(*) FROM notifications WHERE user_id=$1 AND read=false', [req.user.id]);
+    res.json({ count: parseInt(rows[0].count) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// CHANNELS
+app.get('/api/channel/:username', optAuth, async (req, res) => {
+  try {
+    const { rows: users } = await pool.query('SELECT id,username,created_at FROM users WHERE username=$1', [req.params.username]);
     if (!users[0]) return res.status(404).json({ error: 'Канал не найден' });
     const u = users[0];
-    const { rows: videos } = await pool.query(
-      'SELECT v.*, u.username FROM videos v JOIN users u ON u.id=v.user_id WHERE v.user_id=$1 ORDER BY v.created_at DESC', [u.id]
-    );
+    const { rows: videos } = await pool.query('SELECT v.*,u.username FROM videos v JOIN users u ON u.id=v.user_id WHERE v.user_id=$1 ORDER BY v.created_at DESC', [u.id]);
     const { rows: subRows } = await pool.query('SELECT COUNT(*) FROM subscriptions WHERE target_id=$1', [u.id]);
-    const subscriberCount = parseInt(subRows[0].count);
     let isSubscribed = false;
     if (req.user) {
-      const { rows: s } = await pool.query('SELECT 1 FROM subscriptions WHERE follower_id=$1 AND target_id=$2', [req.user.id, u.id]);
-      isSubscribed = s.length > 0;
+      const s = await pool.query('SELECT 1 FROM subscriptions WHERE follower_id=$1 AND target_id=$2', [req.user.id, u.id]);
+      isSubscribed = s.rows.length > 0;
     }
-    res.json({ user: u, videos, subscriberCount, isSubscribed });
+    res.json({ user: u, videos, subscriberCount: parseInt(subRows[0].count), isSubscribed });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -190,6 +287,7 @@ app.post('/api/channel/:username/subscribe', auth, async (req, res) => {
       res.json({ subscribed: false });
     } else {
       await pool.query('INSERT INTO subscriptions(follower_id,target_id) VALUES($1,$2)', [req.user.id, targetId]);
+      await createNotification(targetId, req.user.id, 'subscribe');
       res.json({ subscribed: true });
     }
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -200,7 +298,7 @@ app.get('/api/channel/:username/subscribers', async (req, res) => {
     const { rows: users } = await pool.query('SELECT id FROM users WHERE username=$1', [req.params.username]);
     if (!users[0]) return res.status(404).json({ error: 'Не найдено' });
     const { rows } = await pool.query(
-      'SELECT u.id, u.username FROM subscriptions s JOIN users u ON u.id=s.follower_id WHERE s.target_id=$1 ORDER BY s.created_at DESC',
+      'SELECT u.id,u.username FROM subscriptions s JOIN users u ON u.id=s.follower_id WHERE s.target_id=$1 ORDER BY s.created_at DESC',
       [users[0].id]
     );
     res.json(rows);
