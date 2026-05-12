@@ -111,7 +111,8 @@ app.post('/api/auth/login', async (req, res) => {
     const { rows } = await pool.query('SELECT * FROM users WHERE email=$1', [email]);
     const u = rows[0];
     if (!u || !(await bcrypt.compare(password, u.password_hash))) return res.status(401).json({ error: 'Неверный email или пароль' });
-    res.json({ token: makeToken(u), user: { id: u.id, username: u.username } });
+    const { rows: subRows } = await pool.query('SELECT COUNT(*) FROM subscriptions WHERE target_id=$1', [u.id]);
+    res.json({ token: makeToken(u), user: { id: u.id, username: u.username }, subscriberCount: parseInt(subRows[0].count) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -346,5 +347,50 @@ app.get('/api/users/search', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ALL USERS (for all channels panel)
+app.get('/api/users/all', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT u.id, u.username,
+        (SELECT COUNT(*) FROM subscriptions WHERE target_id=u.id) as subscriber_count,
+        (SELECT COUNT(*) FROM videos WHERE user_id=u.id) as video_count
+       FROM users u
+       ORDER BY subscriber_count DESC, u.created_at DESC`
+    );
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// USER SUBSCRIPTIONS (sidebar)
+app.get('/api/user/subscriptions', auth, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT u.id, u.username,
+        (SELECT COUNT(*) FROM subscriptions WHERE target_id=u.id) as subscriber_count
+       FROM subscriptions s JOIN users u ON u.id=s.target_id
+       WHERE s.follower_id=$1
+       ORDER BY s.created_at DESC`,
+      [req.user.id]
+    );
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// RENAME
+app.post('/api/auth/rename', auth, async (req, res) => {
+  const { username } = req.body;
+  if (!username || !username.trim()) return res.status(400).json({ error: 'Введи никнейм' });
+  const clean = username.trim();
+  if (clean.length < 2 || clean.length > 50) return res.status(400).json({ error: 'Никнейм: 2–50 символов' });
+  try {
+    const exists = await pool.query('SELECT id FROM users WHERE username=$1 AND id!=$2', [clean, req.user.id]);
+    if (exists.rows.length) return res.status(409).json({ error: 'Никнейм уже занят' });
+    await pool.query('UPDATE users SET username=$1 WHERE id=$2', [clean, req.user.id]);
+    const { rows } = await pool.query('SELECT id,username,email FROM users WHERE id=$1', [req.user.id]);
+    res.json({ token: makeToken(rows[0]), user: { id: rows[0].id, username: rows[0].username } });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// LOGIN: return subscriberCount
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 app.listen(process.env.PORT || 3000, () => console.log('🚀 CosmоVibe запущен'));
