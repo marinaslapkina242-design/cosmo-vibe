@@ -93,6 +93,14 @@ body::before {
 .badge-grey { background:#888; box-shadow:0 0 6px rgba(136,136,136,0.5); }
 .badge-blue { background:#1da1f2; box-shadow:0 0 8px rgba(29,161,242,0.6); }
 .badge-gold { background:linear-gradient(135deg,#ffd700,#ff9500); box-shadow:0 0 10px rgba(255,215,0,0.7); }
+.badge-owner { background:linear-gradient(135deg,#7c5cfc,#00d4ff); box-shadow:0 0 12px rgba(124,92,252,0.9); }
+
+/* AT USERNAME TAG */
+.at-tag { color:var(--muted); font-size:11px; font-weight:400; margin-left:1px; }
+
+/* RENAME MODAL */
+.rename-info { font-size:12px; color:var(--muted); margin-bottom:16px; line-height:1.6; padding:10px 14px; background:rgba(124,92,252,.07); border:1px solid var(--border); border-radius:10px; }
+.rename-info b { color:var(--accent2); }
 
 /* SEARCH TABS */
 .search-tabs { display:flex; gap:8px; margin-bottom:20px; }
@@ -541,7 +549,7 @@ textarea.form-input { resize:vertical; min-height:80px; }
       <div class="cat-pill" onclick="filterCat(this,'sport')">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>Спорт
       </div>
-      <div class="cat-pill" onclick="filterCat(this,'other')">Другое</div>
+      <div class="cat-pill" onclick="filterCat(this,'other')">?</div>
     </div>
     <div class="search-tabs" id="searchTabs" style="display:none">
       <div class="search-tab active" id="stVideos" onclick="switchSearchTab('videos')">
@@ -621,7 +629,7 @@ textarea.form-input { resize:vertical; min-height:80px; }
         <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="rgba(124,92,252,0.7)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
       </div>
       <div class="drop-text">Перетащи видео или нажми</div>
-      <div class="drop-hint">MP4, MOV, WebM — до 100MB </div>
+      <div class="drop-hint">MP4, MOV, WebM — до 100MB</div>
     </div>
     <div class="file-info" id="fileInfo"></div>
     <div class="progress-wrap" id="progressWrap">
@@ -640,7 +648,7 @@ textarea.form-input { resize:vertical; min-height:80px; }
       </select>
     </div>
     <div class="form-err" id="uploadErr"></div>
-    <button class="form-btn" id="uploadSubmit" onclick="doUpload()">Опубликовать</button>
+    <button class="form-btn" id="uploadSubmit" onclick="doUpload()">ЗАПУСТИТЬ В ЭФИР 🚀</button>
   </div>
 </div>
 
@@ -680,6 +688,26 @@ textarea.form-input { resize:vertical; min-height:80px; }
 </div>
 
 <div class="toast" id="toast"></div>
+
+<!-- RENAME MODAL -->
+<div class="overlay" id="renameModal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Сменить никнейм</span>
+      <button class="close-btn" onclick="closeRename()">✕</button>
+    </div>
+    <div class="rename-info">
+      Смена никнейма доступна только при наличии <b>серой галочки</b> (50+ подписчиков).<br>
+      После смены все ссылки на твой канал обновятся автоматически.
+    </div>
+    <div class="form-group">
+      <label class="form-label">Новый никнейм</label>
+      <input class="form-input" type="text" id="newUsername" placeholder="новый_никнейм" onkeydown="if(event.key==='Enter')doRename()">
+    </div>
+    <div class="form-err" id="renameErr"></div>
+    <button class="form-btn" onclick="doRename()">СОХРАНИТЬ</button>
+  </div>
+</div>
 
 <script>
 let token = localStorage.getItem('cv_token') || null;
@@ -1245,9 +1273,9 @@ async function doUpload() {
   xhr.onload=()=>{
     if(xhr.status===200){closeUpload();loadVideos();toast('Видео загружено!');}
     else{const d=JSON.parse(xhr.responseText);showErr('uploadErr',d.error||'Ошибка');}
-    btn.disabled=false; btn.textContent='Опубликовать';
+    btn.disabled=false; btn.textContent='ЗАПУСТИТЬ В ЭФИР';
   };
-  xhr.onerror=()=>{showErr('uploadErr','Ошибка сети');btn.disabled=false;btn.textContent='Опубликовать';};
+  xhr.onerror=()=>{showErr('uploadErr','Ошибка сети');btn.disabled=false;btn.textContent='ЗАПУСТИТЬ В ЭФИР';};
   xhr.send(form);
 }
 
