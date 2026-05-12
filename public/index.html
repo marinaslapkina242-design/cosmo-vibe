@@ -472,7 +472,7 @@ textarea.form-input { resize:vertical; min-height:80px; }
       <div class="user-avatar-btn" id="navAvatar" onclick="toggleDropdown()"></div>
       <div class="user-dropdown" id="userDropdown">
         <div class="user-dropdown-header">
-          <div class="user-dropdown-name" id="dropdownName"></div>
+          <div class="user-dropdown-name" id="dropdownName"><span id="dropdownNameText"></span><span id="dropdownNameBadge"></span></div>
           <div class="user-dropdown-sub" id="dropdownBadgeInfo"></div>
         </div>
         <div class="user-dropdown-item" onclick="openMyChannel()">
@@ -534,24 +534,6 @@ textarea.form-input { resize:vertical; min-height:80px; }
 <div class="app-body">
   <main class="main" id="mainContent">
     <div id="homePage">
-      <!-- Badge info bar (always visible) -->
-      <div class="badge-info-bar" id="badgeInfoBar">
-        <span class="badge-info-title">Галочки</span>
-        <div class="badge-tier">
-          <span class="badge-check badge-grey"><svg viewBox="0 0 10 10" fill="none"><polyline points="1.5,5 4,7.5 8.5,2.5" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-          Серая — <span class="badge-tier-count">50+</span>&nbsp;подп.
-        </div>
-        <div class="badge-tier">
-          <span class="badge-check badge-blue"><svg viewBox="0 0 10 10" fill="none"><polyline points="1.5,5 4,7.5 8.5,2.5" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-          Синяя — <span class="badge-tier-count">500+</span>&nbsp;подп.
-        </div>
-        <div class="badge-tier">
-          <span class="badge-check badge-gold"><svg viewBox="0 0 10 10" fill="none"><polyline points="1.5,5 4,7.5 8.5,2.5" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-          Золотая — <span class="badge-tier-count">10 000+</span>&nbsp;подп.
-        </div>
-        <span style="font-size:11px;color:var(--muted);margin-left:auto">Набирай подписчиков — галочка появляется автоматически!</span>
-      </div>
-
       <div class="categories" id="categories">
         <div class="cat-pill active" onclick="filterCat(this,'all')">✦ Все</div>
         <div class="cat-pill" onclick="filterCat(this,'gaming')">
@@ -827,7 +809,9 @@ function updateUI() {
   if (ok && currentUser) {
     const l = currentUser.username[0].toUpperCase();
     document.getElementById('navAvatar').textContent = l;
-    document.getElementById('dropdownName').textContent = currentUser.username;
+    document.getElementById('dropdownNameText').textContent = currentUser.username;
+    // load subscriber count to show badge
+    fetchMySubCount();
   }
   const area = document.getElementById('commentInputArea');
   if (area) area.innerHTML = ok
@@ -964,6 +948,8 @@ async function doLogin() {
     localStorage.setItem('cv_token', token); localStorage.setItem('cv_user', JSON.stringify(currentUser));
     closeAuth(); updateUI(); loadVideos(); pollNotifs(); loadSidebarSubs();
     updateDropdownBadge(data.subscriberCount || 0);
+    const badgeEl = document.getElementById('dropdownNameBadge');
+    if (badgeEl) badgeEl.innerHTML = badgeHTML(parseInt(data.subscriberCount)||0);
     toast('С возвращением, '+currentUser.username+'!');
   } catch(e) { err.textContent=e.message; err.classList.add('show'); }
   finally { btn.disabled=false; btn.textContent='ВОЙТИ В ГАЛАКТИКУ'; }
@@ -994,6 +980,18 @@ function logout() {
   document.getElementById('sidebarSubsSection').style.display = 'none';
   document.getElementById('userDropdown').classList.remove('open');
   toast('До встречи в космосе!');
+}
+
+async function fetchMySubCount() {
+  if (!token || !currentUser) return;
+  try {
+    const data = await api(`/api/channel/${currentUser.username}`);
+    const n = parseInt(data.subscriber_count) || 0;
+    updateDropdownBadge(n);
+    // show badge in name row
+    const badgeEl = document.getElementById('dropdownNameBadge');
+    if (badgeEl) badgeEl.innerHTML = badgeHTML(n);
+  } catch {}
 }
 
 function updateDropdownBadge(subCount) {
