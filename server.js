@@ -19,7 +19,6 @@ pool.query(`
   CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY, username VARCHAR(50) UNIQUE NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL, password_hash TEXT NOT NULL,
-    verified BOOLEAN DEFAULT false, code VARCHAR(6), code_expires BIGINT,
     created_at TIMESTAMP DEFAULT NOW()
   );
   CREATE TABLE IF NOT EXISTS videos (
@@ -43,20 +42,14 @@ pool.query(`
 `).then(() => console.log('БД готова')).catch(console.error);
 
 const resend = new Resend(process.env.RESEND_API_KEY);
-const sendCode = (to, code) => resend.emails.send({
-  from: 'CosmоVibe <onboarding@resend.dev>', to,
-  subject: '🚀 Код входа в CosmоVibe',
-  html: `<div style="background:#060612;padding:40px;font-family:sans-serif;color:#c8c0f0;border-radius:12px"><h2 style="color:#b48aff">CosmоVibe</h2><p>Твой код:</p><div style="background:#12122e;border:1px solid rgba(124,92,252,.3);border-radius:10px;padding:24px;text-align:center"><span style="font-size:42px;font-weight:700;letter-spacing:12px;color:#fff;font-family:monospace">${code}</span></div><p style="color:#6b65a0;font-size:13px;margin-top:16px">Код действует 10 минут.</p></div>`
-});
 const notifyOwner = (username, email) => resend.emails.send({
   from: 'CosmоVibe <onboarding@resend.dev>', to: process.env.OWNER_EMAIL,
   subject: '🌌 НОВЫЙ ПОЛЬЗОВАТЕЛЬ!',
   html: `<div style="background:#060612;padding:40px;font-family:sans-serif;color:#c8c0f0;border-radius:12px"><h2 style="color:#b48aff">Новый пользователь!</h2><p><b style="color:#b48aff">Имя:</b> ${username}</p><p><b style="color:#b48aff">Email:</b> ${email}</p></div>`
-});
+}).catch(() => {});
 
 cloudinary.config({ cloud_name: process.env.CLOUDINARY_CLOUD_NAME, api_key: process.env.CLOUDINARY_API_KEY, api_secret: process.env.CLOUDINARY_API_SECRET });
 
-const code6 = () => String(Math.floor(100000 + Math.random() * 900000));
 const makeToken = (u) => jwt.sign({ id: u.id, username: u.username, email: u.email }, process.env.JWT_SECRET, { expiresIn: '30d' });
 function auth(req, res, next) {
   try { req.user = jwt.verify((req.headers.authorization || '').replace('Bearer ', ''), process.env.JWT_SECRET); next(); }
@@ -67,6 +60,7 @@ function optionalAuth(req, res, next) {
   next();
 }
 
+// ── AUTH ──────────────────────────────────────────────────────
 app.post('/api/auth/register', async (req, res) => {
   const { username, email, password } = req.body;
   if (!username || !email || !password) return res.status(400).json({ error: 'Заполни все поля' });
@@ -75,24 +69,12 @@ app.post('/api/auth/register', async (req, res) => {
     const exists = await pool.query('SELECT id FROM users WHERE email=$1 OR username=$2', [email, username]);
     if (exists.rows.length) return res.status(409).json({ error: 'Email или имя уже заняты' });
     const hash = await bcrypt.hash(password, 10);
-    const c = code6(), exp = Date.now() + 600000;
-    await pool.query('INSERT INTO users (username,email,password_hash,code,code_expires) VALUES($1,$2,$3,$4,$5)', [username, email, hash, c, exp]);
-    await sendCode(email, c);
-    res.json({ step: 'verify', email });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/auth/verify', async (req, res) => {
-  const { email, code } = req.body;
-  try {
-    const { rows } = await pool.query('SELECT * FROM users WHERE email=$1', [email]);
-    const u = rows[0];
-    if (!u) return res.status(404).json({ error: 'Не найдено' });
-    if (u.code !== code) return res.status(400).json({ error: 'Неверный код' });
-    if (Date.now() > Number(u.code_expires)) return res.status(400).json({ error: 'Код устарел' });
-    await pool.query('UPDATE users SET verified=true,code=NULL,code_expires=NULL WHERE id=$1', [u.id]);
-    notifyOwner(u.username, u.email).catch(() => {});
-    res.json({ token: makeToken(u), user: { id: u.id, username: u.username } });
+    const { rows } = await pool.query(
+      'INSERT INTO users (username,email,password_hash) VALUES($1,$2,$3) RETURNING *',
+      [username, email, hash]
+    );
+    notifyOwner(username, email);
+    res.json({ token: makeToken(rows[0]), user: { id: rows[0].id, username: rows[0].username } });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -102,39 +84,11 @@ app.post('/api/auth/login', async (req, res) => {
     const { rows } = await pool.query('SELECT * FROM users WHERE email=$1', [email]);
     const u = rows[0];
     if (!u || !(await bcrypt.compare(password, u.password_hash))) return res.status(401).json({ error: 'Неверный email или пароль' });
-    if (!u.verified) return res.status(403).json({ error: 'Подтверди email сначала' });
-    const c = code6(), exp = Date.now() + 600000;
-    await pool.query('UPDATE users SET code=$1,code_expires=$2 WHERE id=$3', [c, exp, u.id]);
-    await sendCode(email, c);
-    res.json({ step: 'verify', email });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/auth/login-verify', async (req, res) => {
-  const { email, code } = req.body;
-  try {
-    const { rows } = await pool.query('SELECT * FROM users WHERE email=$1', [email]);
-    const u = rows[0];
-    if (!u) return res.status(404).json({ error: 'Не найдено' });
-    if (u.code !== code) return res.status(400).json({ error: 'Неверный код' });
-    if (Date.now() > Number(u.code_expires)) return res.status(400).json({ error: 'Код устарел' });
-    await pool.query('UPDATE users SET code=NULL,code_expires=NULL WHERE id=$1', [u.id]);
     res.json({ token: makeToken(u), user: { id: u.id, username: u.username } });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/auth/resend', async (req, res) => {
-  const { email } = req.body;
-  try {
-    const { rows } = await pool.query('SELECT id FROM users WHERE email=$1', [email]);
-    if (!rows[0]) return res.status(404).json({ error: 'Не найдено' });
-    const c = code6(), exp = Date.now() + 600000;
-    await pool.query('UPDATE users SET code=$1,code_expires=$2 WHERE id=$3', [c, exp, rows[0].id]);
-    await sendCode(email, c);
-    res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
+// ── VIDEOS ────────────────────────────────────────────────────
 app.get('/api/videos', async (req, res) => {
   const { category = 'all', search = '', limit = 24 } = req.query;
   try {
@@ -204,7 +158,7 @@ app.post('/api/videos/:id/like', auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── CHANNELS & SUBSCRIPTIONS ──────────────────────────────────
+// ── CHANNELS ──────────────────────────────────────────────────
 app.get('/api/channel/:username', optionalAuth, async (req, res) => {
   try {
     const { rows: users } = await pool.query('SELECT id, username, created_at FROM users WHERE username=$1', [req.params.username]);
