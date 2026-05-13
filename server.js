@@ -172,11 +172,14 @@ app.get('/api/videos/:id', optAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+const OWNER_USERNAME = 'Maksim';
+
 app.delete('/api/videos/:id', auth, async (req, res) => {
   try {
     const { rows } = await pool.query('SELECT * FROM videos WHERE id=$1', [req.params.id]);
     if (!rows[0]) return res.status(404).json({ error: 'Не найдено' });
-    if (rows[0].user_id !== req.user.id) return res.status(403).json({ error: 'Нет прав' });
+    const isOwner = req.user.username && req.user.username.toLowerCase() === OWNER_USERNAME.toLowerCase();
+    if (rows[0].user_id !== req.user.id && !isOwner) return res.status(403).json({ error: 'Нет прав' });
     if (rows[0].cloudinary_id) await cloudinary.uploader.destroy(rows[0].cloudinary_id, { resource_type: 'video' });
     await pool.query('DELETE FROM videos WHERE id=$1', [req.params.id]);
     res.json({ ok: true });
@@ -242,7 +245,8 @@ app.delete('/api/comments/:id', auth, async (req, res) => {
   try {
     const { rows } = await pool.query('SELECT * FROM comments WHERE id=$1', [req.params.id]);
     if (!rows[0]) return res.status(404).json({ error: 'Не найдено' });
-    if (rows[0].user_id !== req.user.id) return res.status(403).json({ error: 'Нет прав' });
+    const isOwner = req.user.username && req.user.username.toLowerCase() === OWNER_USERNAME.toLowerCase();
+    if (rows[0].user_id !== req.user.id && !isOwner) return res.status(403).json({ error: 'Нет прав' });
     await pool.query('DELETE FROM comments WHERE id=$1', [req.params.id]);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
