@@ -614,16 +614,83 @@ textarea.form-input { resize:vertical; min-height:80px; }
 }
 .mob-nav-upload svg { width: 20px; height: 20px; }
 
+/* ── МОБИЛЬНЫЙ DRAWER (сайдбар как шторка снизу) — только мобайл ── */
+.mob-drawer-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6); backdrop-filter: blur(6px);
+  z-index: 400;
+}
+.mob-drawer-overlay.open { display: block; }
+.mob-drawer {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 401;
+  background: rgba(5,5,18,0.99); backdrop-filter: blur(28px);
+  border-top: 1px solid rgba(124,92,252,0.2);
+  border-radius: 22px 22px 0 0;
+  padding: 0 0 max(20px, env(safe-area-inset-bottom));
+  max-height: 80vh; overflow-y: auto;
+  transform: translateY(100%); transition: transform .32s cubic-bezier(.32,1,.6,1);
+  box-shadow: 0 -8px 50px rgba(0,0,0,0.7);
+}
+.mob-drawer.open { transform: translateY(0); }
+.mob-drawer-handle {
+  width: 36px; height: 4px; background: rgba(124,92,252,0.35);
+  border-radius: 2px; margin: 12px auto 8px;
+}
+.mob-drawer-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 20px 12px;
+  border-bottom: 1px solid rgba(124,92,252,0.1);
+}
+.mob-drawer-title {
+  font-family:'Orbitron',monospace; font-size:11px; color:var(--accent2);
+  letter-spacing:2px; text-transform:uppercase;
+}
+.mob-drawer-close {
+  background: rgba(255,255,255,.06); border: 1px solid rgba(124,92,252,0.15);
+  color: var(--muted); cursor: pointer; width: 28px; height: 28px;
+  border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-size: 12px;
+}
+.mob-drawer-body { padding: 8px 0 8px; }
+.mob-drawer-section-title {
+  font-size: 10px; font-weight: 700; color: rgba(106,100,144,0.8);
+  letter-spacing: 1.5px; text-transform: uppercase;
+  padding: 10px 20px 6px;
+}
+.mob-drawer-item {
+  display: flex; align-items: center; gap: 14px;
+  padding: 12px 20px; cursor: pointer; transition: background .15s;
+  color: var(--text); font-size: 14px; font-weight: 500;
+  -webkit-tap-highlight-color: transparent;
+}
+.mob-drawer-item:hover, .mob-drawer-item:active { background: rgba(124,92,252,.1); }
+.mob-drawer-item.active { color: var(--accent2); background: rgba(124,92,252,.08); }
+.mob-drawer-item svg { flex-shrink: 0; }
+.mob-drawer-avatar {
+  width: 34px; height: 34px; border-radius: 50%;
+  background: linear-gradient(135deg,var(--accent),var(--accent2));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 700; color: #fff; flex-shrink: 0;
+  box-shadow: 0 0 10px rgba(124,92,252,.3);
+}
+.mob-drawer-name { flex: 1; display: flex; align-items: center; gap: 5px; overflow: hidden; }
+.mob-drawer-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mob-drawer-sub { font-size: 11px; color: var(--muted); margin-left: auto; flex-shrink: 0; }
+.mob-drawer-divider { height: 1px; background: rgba(124,92,252,.1); margin: 6px 0; }
+
 @media (max-width: 768px) {
   /* Показываем нижнюю навигацию */
   .mobile-nav { display: grid; }
 
-  /* Скрываем боковую панель и кнопки навбара */
+  /* Скрываем боковую ПАНЕЛЬ (она заменяется drawer'ом) и кнопки навбара */
   .sidebar { display: none !important; }
   .sidebar-toggle { display: none; }
   .nav-logo-area { width: auto; }
   #allChannelsBtn { display: none !important; }
   #uploadBtn { display: none !important; }
+
+  /* Drawer виден только на мобайле */
+  .mob-drawer-overlay, .mob-drawer { display: block; }
 
   /* Навбар на мобайле */
   .navbar { padding: 0 14px; height: 56px; gap: 10px; }
@@ -1176,6 +1243,50 @@ textarea.form-input { resize:vertical; min-height:80px; }
   </div>
 </div>
 
+<!-- ── МОБИЛЬНЫЙ DRAWER (подписки + все каналы) ── -->
+<div class="mob-drawer-overlay" id="mobDrawerOverlay" onclick="closeMobDrawer()"></div>
+<div class="mob-drawer" id="mobDrawer">
+  <div class="mob-drawer-handle"></div>
+  <div class="mob-drawer-header">
+    <span class="mob-drawer-title" id="mobDrawerTitle">Меню</span>
+    <button class="mob-drawer-close" onclick="closeMobDrawer()">✕</button>
+  </div>
+  <div class="mob-drawer-body" id="mobDrawerBody">
+    <!-- Контент загружается динамически -->
+  </div>
+</div>
+
+<!-- ── НИЖНЯЯ МОБИЛЬНАЯ НАВИГАЦИЯ ── -->
+<nav class="mobile-nav" id="mobileNav">
+  <!-- Главная -->
+  <button class="mob-nav-btn active" id="mobBtnHome" onclick="mobNavGo('home')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+    Главная
+  </button>
+  <!-- Каналы -->
+  <button class="mob-nav-btn" id="mobBtnChannels" onclick="mobNavGo('channels')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+    Каналы
+  </button>
+  <!-- Загрузить (центральная кнопка) -->
+  <button class="mob-nav-btn" onclick="openUpload()">
+    <div class="mob-nav-upload">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+    </div>
+    <span id="mobUploadLabel"></span>
+  </button>
+  <!-- Подписки -->
+  <button class="mob-nav-btn" id="mobBtnSubs" onclick="mobNavGo('subs')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+    Подписки
+  </button>
+  <!-- Профиль -->
+  <button class="mob-nav-btn" id="mobBtnProfile" onclick="mobNavGo('profile')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+    Профиль
+  </button>
+</nav>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -1445,6 +1556,9 @@ function logout() {
   updateUI(); goHome();
   document.getElementById('sidebarSubsSection').style.display = 'none';
   document.getElementById('userDropdown').classList.remove('open');
+  // Мобайл: сбросить профиль активность
+  document.querySelectorAll('.mob-nav-btn').forEach(b=>b.classList.remove('active'));
+  const mh = document.getElementById('mobBtnHome'); if(mh) mh.classList.add('active');
   toast('До встречи в космосе!');
 }
 
@@ -1901,6 +2015,9 @@ function goHome() {
   document.getElementById('videoGrid').style.display='';
   document.getElementById('sectionTitle').textContent='Видео галактики';
   searchTabMode2='videos';
+  // Сбросить активную кнопку мобайл навигации
+  document.querySelectorAll('.mob-nav-btn').forEach(b=>b.classList.remove('active'));
+  const mh = document.getElementById('mobBtnHome'); if(mh) mh.classList.add('active');
   loadVideos();
 }
 
@@ -2092,7 +2209,157 @@ async function resolveReport(reportId, action) {
   } catch(e) { toast('Ошибка: ' + e.message); }
 }
 
-['authModal','uploadModal','allChannelsModal','badgeModal','renameModal','reportModal','modPanel'].forEach(id=>{
+
+// ── МОБИЛЬНЫЙ DRAWER ──
+let mobDrawerMode = '';
+
+function openMobDrawer(mode, title) {
+  mobDrawerMode = mode;
+  document.getElementById('mobDrawerTitle').textContent = title;
+  document.getElementById('mobDrawerOverlay').classList.add('open');
+  document.getElementById('mobDrawer').classList.add('open');
+  document.body.style.overflow = 'hidden';
+  renderMobDrawer(mode);
+}
+
+function closeMobDrawer() {
+  document.getElementById('mobDrawerOverlay').classList.remove('open');
+  document.getElementById('mobDrawer').classList.remove('open');
+  document.body.style.overflow = '';
+  // Сбросить активные кнопки нижней навигации (кроме home)
+  document.querySelectorAll('.mob-nav-btn').forEach(b => b.classList.remove('active'));
+  const homeBtn = document.getElementById('mobBtnHome');
+  // Восстановить активную в зависимости от текущей страницы
+  if (document.getElementById('channelPage').classList.contains('open')) {
+    // канал — ничего не подсвечиваем
+  } else {
+    if (homeBtn) homeBtn.classList.add('active');
+  }
+}
+
+async function renderMobDrawer(mode) {
+  const body = document.getElementById('mobDrawerBody');
+  if (mode === 'channels') {
+    body.innerHTML = `
+      <div style="padding:12px 20px 8px">
+        <input class="form-input" type="text" placeholder="Поиск каналов..." style="font-size:14px" oninput="filterMobChannels(this.value)" id="mobChSearch">
+      </div>
+      <div id="mobChList" style="padding:0 8px 8px">
+        <div style="color:var(--muted);padding:20px;text-align:center;font-size:13px">Загрузка...</div>
+      </div>`;
+    if (!allChannelsData.length) {
+      try { allChannelsData = await api('/api/users/all'); } catch {}
+    }
+    renderMobChannelsList(allChannelsData);
+  } else if (mode === 'subs') {
+    if (!token) {
+      body.innerHTML = `<div style="padding:30px 20px;text-align:center;color:var(--muted);font-size:13px">
+        <div style="margin-bottom:12px;opacity:.5"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div>
+        <div style="margin-bottom:14px">Войди чтобы видеть свои подписки</div>
+        <button class="form-btn" style="width:auto;padding:10px 28px;font-size:11px" onclick="closeMobDrawer();openAuth()">ВОЙТИ</button>
+      </div>`;
+      return;
+    }
+    body.innerHTML = `<div style="color:var(--muted);padding:20px;text-align:center;font-size:13px">Загрузка...</div>`;
+    try {
+      const subs = await api('/api/user/subscriptions');
+      if (!subs.length) {
+        body.innerHTML = `<div style="padding:30px 20px;text-align:center;color:var(--muted);font-size:13px">
+          <div style="margin-bottom:8px;opacity:.4"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div>
+          Ты ещё ни на кого не подписан
+        </div>`;
+        return;
+      }
+      body.innerHTML = subs.map(s => {
+        const badge = badgeHTML(s.subscriber_count, s.username);
+        return `<div class="mob-drawer-item" onclick="closeMobDrawer();openChannel('${esc(s.username)}')">
+          <div class="mob-drawer-avatar">${s.username[0].toUpperCase()}</div>
+          <div class="mob-drawer-name">
+            <span class="mob-drawer-name-text">${esc(s.username)}</span>${badge}
+          </div>
+          <span class="mob-drawer-sub">${fmtNum(s.subscriber_count)}</span>
+        </div>`;
+      }).join('');
+    } catch {
+      body.innerHTML = '<div style="color:var(--muted);padding:20px;text-align:center">Ошибка загрузки</div>';
+    }
+  } else if (mode === 'profile') {
+    if (!token || !currentUser) {
+      body.innerHTML = `<div style="padding:30px 20px;text-align:center;color:var(--muted);font-size:13px">
+        <div style="margin-bottom:14px">Войди в аккаунт</div>
+        <button class="form-btn" style="width:auto;padding:10px 28px;font-size:11px" onclick="closeMobDrawer();openAuth()">ВОЙТИ</button>
+      </div>`;
+      return;
+    }
+    let subCount = 0;
+    try { const ch = await api(`/api/channel/${encodeURIComponent(currentUser.username)}`); subCount = ch.subscriberCount; } catch {}
+    const badge = badgeHTML(subCount, currentUser.username);
+    const hint = subCount < 50 ? `До серой галочки: ${50-subCount} подп.` :
+                 subCount < 500 ? `До синей галочки: ${500-subCount} подп.` :
+                 subCount < 10000 ? `До золотой: ${(10000-subCount).toLocaleString()} подп.` : '';
+    body.innerHTML = `
+      <div style="padding:16px 20px 12px;display:flex;align-items:center;gap:14px;border-bottom:1px solid rgba(124,92,252,.1)">
+        <div class="mob-drawer-avatar" style="width:48px;height:48px;font-size:18px">${currentUser.username[0].toUpperCase()}</div>
+        <div>
+          <div style="font-size:15px;font-weight:700;color:var(--star);display:flex;align-items:center;gap:5px">${esc(currentUser.username)}${badge}</div>
+          ${hint ? `<div style="font-size:11px;color:var(--muted);margin-top:3px">${hint}</div>` : ''}
+        </div>
+      </div>
+      <div class="mob-drawer-item" onclick="closeMobDrawer();openMyChannel()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        Мой канал
+      </div>
+      <div class="mob-drawer-item" onclick="closeMobDrawer();openBadgeInfo()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="20 6 9 17 4 12"/></svg>
+        Как получить галочку
+      </div>
+      <div class="mob-drawer-divider"></div>
+      <div class="mob-drawer-item" style="color:var(--danger)" onclick="closeMobDrawer();logout()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        Выйти
+      </div>`;
+  }
+}
+
+function renderMobChannelsList(users) {
+  const list = document.getElementById('mobChList');
+  if (!list) return;
+  if (!users || !users.length) { list.innerHTML = '<div style="color:var(--muted);padding:16px;text-align:center;font-size:13px">Каналов пока нет</div>'; return; }
+  list.innerHTML = users.map(u => {
+    const badge = badgeHTML(u.subscriber_count, u.username);
+    return `<div class="mob-drawer-item" onclick="closeMobDrawer();openChannel('${esc(u.username)}')">
+      <div class="mob-drawer-avatar">${u.username[0].toUpperCase()}</div>
+      <div class="mob-drawer-name">
+        <span class="mob-drawer-name-text">${esc(u.username)}</span>${badge}
+      </div>
+      <span class="mob-drawer-sub">${u.subscriber_count||0}</span>
+    </div>`;
+  }).join('');
+}
+
+function filterMobChannels(q) {
+  const filtered = q.trim() ? allChannelsData.filter(u => u.username.toLowerCase().includes(q.toLowerCase())) : allChannelsData;
+  renderMobChannelsList(filtered);
+}
+
+function mobNavGo(tab) {
+  document.querySelectorAll('.mob-nav-btn').forEach(b => b.classList.remove('active'));
+  if (tab === 'home') {
+    document.getElementById('mobBtnHome').classList.add('active');
+    goHome();
+  } else if (tab === 'channels') {
+    document.getElementById('mobBtnChannels').classList.add('active');
+    openMobDrawer('channels', 'Все каналы');
+  } else if (tab === 'subs') {
+    document.getElementById('mobBtnSubs').classList.add('active');
+    openMobDrawer('subs', 'Подписки');
+  } else if (tab === 'profile') {
+    document.getElementById('mobBtnProfile').classList.add('active');
+    openMobDrawer('profile', 'Профиль');
+  }
+}
+
+
   const el = document.getElementById(id);
   if (el) el.addEventListener('click', e=>{ if(e.target.id===id) el.classList.remove('open'); });
 });
