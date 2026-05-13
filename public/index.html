@@ -948,9 +948,12 @@ async function loadSidebarSubs() {
     section.style.display = 'block';
     const showCount = 6;
     list.innerHTML = subs.slice(0, showCount).map(s => {
-      const badge = badgeHTML(s.subscriber_count);
+      const badge = badgeHTML(s.subscriber_count, s.username);
+      const avatarEl = isOwner(s.username)
+        ? crystalWrap(s.username[0].toUpperCase(), 'sidebar-avatar crystal-sidebar', '11px')
+        : `<div class="sidebar-avatar">${s.username[0].toUpperCase()}</div>`;
       return `<div class="sidebar-item" onclick="openChannel('${esc(s.username)}')">
-        <div class="sidebar-avatar">${s.username[0].toUpperCase()}</div>
+        ${avatarEl}
         <span class="sidebar-item-text" style="display:flex;align-items:center;gap:3px">${esc(s.username)}${badge}</span>
         <span class="sidebar-sub-count">${fmtNum(s.subscriber_count)}</span>
       </div>`;
@@ -985,9 +988,12 @@ function renderChannelsGrid(users) {
   const grid = document.getElementById('channelsGrid');
   if (!users.length) { grid.innerHTML = '<div style="color:var(--muted);padding:20px;text-align:center;grid-column:1/-1">Каналов пока нет</div>'; return; }
   grid.innerHTML = users.map(u => {
-    const badge = badgeHTML(u.subscriber_count);
+    const badge = badgeHTML(u.subscriber_count, u.username);
+    const avatarEl = isOwner(u.username)
+      ? crystalWrap(u.username[0].toUpperCase(), 'channel-mini-avatar', '16px')
+      : `<div class="channel-mini-avatar">${u.username[0].toUpperCase()}</div>`;
     return `<div class="channel-mini-card" onclick="document.getElementById('allChannelsModal').classList.remove('open');openChannel('${esc(u.username)}')">
-      <div class="channel-mini-avatar">${u.username[0].toUpperCase()}</div>
+      ${avatarEl}
       <div>
         <div class="channel-mini-name">${esc(u.username)}${badge}</div>
         <div class="channel-mini-sub">${u.subscriber_count||0} подп. · ${u.video_count||0} видео</div>
@@ -1092,27 +1098,39 @@ function logout() {
   toast('До встречи в космосе!');
 }
 
-async function fetchMySubCount() {
-  if (!token || !currentUser) return;
-  try {
-    const data = await api(`/api/channel/${currentUser.username}`);
-    const n = parseInt(data.subscriber_count) || 0;
-    updateDropdownBadge(n);
-    // show badge in name row
-    const badgeEl = document.getElementById('dropdownNameBadge');
-    if (badgeEl) badgeEl.innerHTML = badgeHTML(n);
-  } catch {}
-}
-
-function updateDropdownBadge(subCount) {
+function updateDropdownBadge(subCount, username) {
   const info = document.getElementById('dropdownBadgeInfo');
   if (!info) return;
+  if (username && isOwner(username)) {
+    info.textContent = '✦ Создатель CosmоVibe';
+    info.style.color = '#1da1f2';
+    const badgeEl = document.getElementById('dropdownNameBadge');
+    if (badgeEl) badgeEl.innerHTML = badgeHTML(0, username);
+    return;
+  }
   const n = parseInt(subCount) || 0;
-  if (n >= 10000) info.textContent = '✦ Золотая галочка';
-  else if (n >= 500) info.textContent = '✦ Синяя галочка';
-  else if (n >= 50) info.textContent = '✦ Серая галочка';
-  else { const need = n < 50 ? 50-n : n < 500 ? 500-n : 10000-n; info.textContent = `До серой галочки: ${50-n} подп.`; }
-  if (n >= 50) info.style.color = n >= 10000 ? '#ffd700' : n >= 500 ? '#1da1f2' : '#888aaa';
+  if (n >= 10000) { info.textContent = '✦ Золотая галочка'; info.style.color = '#ffd700'; }
+  else if (n >= 500) { info.textContent = '✦ Синяя галочка'; info.style.color = '#1da1f2'; }
+  else if (n >= 50) { info.textContent = '✦ Серая галочка'; info.style.color = '#888aaa'; }
+  else { info.textContent = `До серой галочки: ${50-n} подп.`; info.style.color = ''; }
+}
+
+async function fetchMySubCount() {
+  if (!token || !currentUser) return;
+  // Если это владелец — сразу показываем синюю галочку без запроса
+  if (isOwner(currentUser.username)) {
+    const badgeEl = document.getElementById('dropdownNameBadge');
+    if (badgeEl) badgeEl.innerHTML = badgeHTML(0, currentUser.username);
+    updateDropdownBadge(0, currentUser.username);
+    return;
+  }
+  try {
+    const data = await api(`/api/channel/${currentUser.username}`);
+    const n = parseInt(data.subscriberCount) || 0;
+    updateDropdownBadge(n, currentUser.username);
+    const badgeEl = document.getElementById('dropdownNameBadge');
+    if (badgeEl) badgeEl.innerHTML = badgeHTML(n, currentUser.username);
+  } catch {}
 }
 
 // ── NOTIFICATIONS ──
@@ -1294,17 +1312,21 @@ async function loadComments(videoId) {
 
 function renderComment(c, replies, isReply) {
   const own = currentUser && c.user_id === currentUser.id;
-  const badge = badgeHTML(c.subscriber_count);
+  const isAdmin = currentUser && isOwner(currentUser.username);
+  const badge = badgeHTML(c.subscriber_count, c.username);
+  const avatarEl = isOwner(c.username)
+    ? crystalWrap(c.username[0].toUpperCase(), 'comment-avatar', '13px')
+    : `<div class="comment-avatar" style="cursor:pointer;flex-shrink:0" onclick="closePlayer();openChannel('${esc(c.username)}')">${c.username[0].toUpperCase()}</div>`;
   const repliesHTML = replies.length ? `<div class="replies-wrap">${replies.map(r => renderComment(r, [], true)).join('')}</div>` : '';
   return `<div class="comment-item" id="comment-${c.id}">
-    <div class="comment-avatar" style="cursor:pointer;flex-shrink:0" onclick="closePlayer();openChannel('${esc(c.username)}')">${c.username[0].toUpperCase()}</div>
+    ${avatarEl}
     <div class="comment-body">
-      <div class="comment-username" onclick="closePlayer();openChannel('${esc(c.username)}')">${esc(c.username)}${badge}</div>
+      <div class="comment-username" onclick="closePlayer();openChannel('${esc(c.username)}')" style="cursor:pointer">${esc(c.username)}${badge}</div>
       <div class="comment-text">${esc(c.text)}</div>
       <div class="comment-actions">
         <div class="comment-time">${timeAgo(new Date(c.created_at))}</div>
         ${!isReply && token ? `<button class="reply-btn" onclick="toggleReplyInput(${c.id},'${esc(c.username)}')">${ICONS.reply} Ответить</button>` : ''}
-        ${own ? `<button class="comment-del" onclick="deleteComment(${c.id})">✕</button>` : ''}
+        ${(own || isAdmin) ? `<button class="comment-del" onclick="deleteComment(${c.id})">✕</button>` : ''}
       </div>
       <div id="reply-input-${c.id}" style="display:none">
         <div class="reply-input-wrap">
@@ -1370,9 +1392,16 @@ async function openChannel(username) {
   try {
     const data = await api(`/api/channel/${encodeURIComponent(username)}`);
     const u = data.user;
-    document.getElementById('chAvatar').textContent = u.username[0].toUpperCase();
+    const chAvatarEl = document.getElementById('chAvatar');
+    if (isOwner(u.username)) {
+      chAvatarEl.innerHTML = crystalWrap(u.username[0].toUpperCase(), '', '28px');
+      chAvatarEl.style.cssText = 'background:none;border:none;box-shadow:none;padding:0;';
+    } else {
+      chAvatarEl.textContent = u.username[0].toUpperCase();
+      chAvatarEl.style.cssText = '';
+    }
     document.getElementById('chNameText').textContent = u.username;
-    document.getElementById('chBadge').innerHTML = badgeHTML(data.subscriberCount);
+    document.getElementById('chBadge').innerHTML = badgeHTML(data.subscriberCount, u.username);
     document.getElementById('chSubNum').textContent = data.subscriberCount;
     document.getElementById('chVidNum').textContent = data.videos.length;
     const actions = document.getElementById('chActions');
@@ -1384,16 +1413,16 @@ async function openChannel(username) {
         }
       </button>`;
     } else if (currentUser && currentUser.id === u.id) {
-      // My own channel — show subscriber count hint for badges
       const myCount = data.subscriberCount;
       let hint = '';
-      if (myCount < 50) hint = `<span style="font-size:12px;color:var(--muted);padding:6px 12px;background:rgba(124,92,252,.07);border:1px solid var(--border);border-radius:20px">До серой галочки: ${50-myCount} подп.</span>`;
-      else if (myCount < 500) hint = `<span style="font-size:12px;color:#1da1f2;padding:6px 12px;background:rgba(29,161,242,.08);border:1px solid rgba(29,161,242,.3);border-radius:20px">До синей галочки: ${500-myCount} подп.</span>`;
-      else if (myCount < 10000) hint = `<span style="font-size:12px;color:var(--gold);padding:6px 12px;background:rgba(255,215,0,.07);border:1px solid rgba(255,215,0,.3);border-radius:20px">До золотой галочки: ${(10000-myCount).toLocaleString()} подп.</span>`;
+      if (!isOwner(u.username)) {
+        if (myCount < 50) hint = `<span style="font-size:12px;color:var(--muted);padding:6px 12px;background:rgba(124,92,252,.07);border:1px solid var(--border);border-radius:20px">До серой галочки: ${50-myCount} подп.</span>`;
+        else if (myCount < 500) hint = `<span style="font-size:12px;color:#1da1f2;padding:6px 12px;background:rgba(29,161,242,.08);border:1px solid rgba(29,161,242,.3);border-radius:20px">До золотой: ${(10000-myCount).toLocaleString()} подп.</span>`;
+      }
       actions.innerHTML = `<button class="btn btn-ghost" onclick="openUpload()">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Загрузить
       </button>${hint}`;
-      updateDropdownBadge(myCount);
+      updateDropdownBadge(myCount, u.username);
     } else { actions.innerHTML = ''; }
     renderGrid(data.videos, 'chVideoGrid');
     chTab('videos');
@@ -1414,7 +1443,7 @@ async function toggleSubscribe(username) {
     const cur = parseInt(document.getElementById('chSubNum').textContent) || 0;
     const newCount = cur + (data.subscribed ? 1 : -1);
     document.getElementById('chSubNum').textContent = newCount;
-    document.getElementById('chBadge').innerHTML = badgeHTML(newCount);
+    document.getElementById('chBadge').innerHTML = badgeHTML(newCount, username);
     toast(data.subscribed ? 'Подписался!' : 'Отписался');
     loadSidebarSubs();
     loadAllChannels();
@@ -1433,9 +1462,12 @@ async function chTab(tab) {
       const subs = await api(`/api/channel/${encodeURIComponent(currentChannelUsername)}/subscribers`);
       if (!subs.length) { list.innerHTML='<div style="color:var(--muted);padding:20px;text-align:center">Подписчиков пока нет</div>'; return; }
       list.innerHTML = subs.map(s => {
-        const badge = badgeHTML(s.subscriber_count);
+        const badge = badgeHTML(s.subscriber_count, s.username);
+        const avatarEl = isOwner(s.username)
+          ? crystalWrap(s.username[0].toUpperCase(), 'sub-avatar', '14px')
+          : `<div class="sub-avatar">${s.username[0].toUpperCase()}</div>`;
         return `<div class="subscriber-item" onclick="openChannel('${esc(s.username)}')">
-          <div class="sub-avatar">${s.username[0].toUpperCase()}</div>
+          ${avatarEl}
           <div><div class="sub-name">${esc(s.username)}${badge}</div></div>
         </div>`;
       }).join('');
@@ -1464,9 +1496,12 @@ async function loadPeople(query='') {
     const users = await api(`/api/users/search?q=${encodeURIComponent(query)}`);
     if (!users.length) { grid.innerHTML='<div style="color:var(--muted);padding:20px;text-align:center">Никого не найдено</div>'; return; }
     grid.innerHTML = users.map(u => {
-      const badge = badgeHTML(u.subscriber_count);
+      const badge = badgeHTML(u.subscriber_count, u.username);
+      const avatarEl = isOwner(u.username)
+        ? crystalWrap(u.username[0].toUpperCase(), 'people-avatar', '18px')
+        : `<div class="people-avatar">${u.username[0].toUpperCase()}</div>`;
       return `<div class="people-card" onclick="openChannel('${esc(u.username)}')">
-        <div class="people-avatar">${u.username[0].toUpperCase()}</div>
+        ${avatarEl}
         <div class="people-info">
           <div class="people-name-row"><span class="people-name">${esc(u.username)}</span>${badge}</div>
           <div class="people-subs">${u.subscriber_count||0} подписчиков · ${u.video_count||0} видео</div>
