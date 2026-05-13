@@ -58,6 +58,14 @@ pool.query(`
     read BOOLEAN DEFAULT false,
     created_at TIMESTAMP DEFAULT NOW()
   );
+  CREATE TABLE IF NOT EXISTS moderation_reports (
+    id SERIAL PRIMARY KEY,
+    video_id INTEGER REFERENCES videos(id) ON DELETE CASCADE,
+    reporter_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    reason TEXT NOT NULL,
+    status VARCHAR(20) DEFAULT 'pending',
+    created_at TIMESTAMP DEFAULT NOW()
+  );
 `).then(() => console.log('БД готова')).catch(console.error);
 
 // Migration: add parent_id to comments if missing
@@ -131,11 +139,130 @@ app.get('/api/videos', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── UPLOAD RATE LIMIT: 3 videos per 5 hours ──
+const UPLOAD_LIMIT = 3;
+const UPLOAD_WINDOW_HOURS = 5;
+
+// Bad words / moderation keywords (RU + EN)
+const BAD_WORDS = [
+  'порно','пorno','секс','18+','xxx','эротик','голая','голый','нагая','нагой',
+  'мастурб','анал','фетиш','хентай','hentai','nsfw','nude','naked','porn',
+  'fuck','shit','bitch','ass','dick','cock','pussy','nigger','nigga',
+  'хуй','пизд','еба','ёба','залуп','сука','бляд','пидор','педик','нига',
+  'убий','убийст','терроризм','isis','нацист','фашист','swastika','nazi'
+];
+
+function containsBadWords(text) {
+  if (!text) return false;
+  const lower = text.toLowerCase();
+  return BAD_WORDS.some(w => lower.includes(w));
+}
+
+async function checkUploadLimit(userId) {
+  const since = new Date(Date.now() - UPLOAD_WINDOW_HOURS * 60 * 60 * 1000);
+  const { rows } = await pool.query(
+    `SELECT COUNT(*) FROM videos WHERE user_id=$1 AND created_at > $2`,
+    [userId, since]
+  );
+  const count = parseInt(rows[0].count);
+  if (count >= UPLOAD_LIMIT) {
+    // Find the oldest upload in this window to calculate when next slot opens
+    const oldest = await pool.query(
+      `SELECT created_at FROM videos WHERE user_id=$1 AND created_at > $2 ORDER BY created_at ASC LIMIT 1`,
+      [userId, since]
+    );
+    const unlockAt = new Date(new Date(oldest.rows[0].created_at).getTime() + UPLOAD_WINDOW_HOURS * 60 * 60 * 1000);
+    const minutesLeft = Math.ceil((unlockAt - new Date()) / 60000);
+    const h = Math.floor(minutesLeft / 60);
+    const m = minutesLeft % 60;
+    const timeStr = h > 0 ? `${h} ч ${m} мин` : `${m} мин`;
+    return { limited: true, timeStr, unlockAt };
+  }
+  return { limited: false, remaining: UPLOAD_LIMIT - count };
+}
+
+// Endpoint to check upload limit status
+app.get('/api/videos/upload-status', auth, async (req, res) => {
+  try {
+    const isOwner = req.user.username && req.user.username.toLowerCase() === OWNER_USERNAME.toLowerCase();
+    if (isOwner) return res.json({ limited: false, remaining: 999, isOwner: true });
+    const status = await checkUploadLimit(req.user.id);
+    res.json(status);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Moderation report
+app.post('/api/videos/:id/report', auth, async (req, res) => {
+  const { reason } = req.body;
+  if (!reason) return res.status(400).json({ error: 'Укажи причину' });
+  try {
+    await pool.query(
+      'INSERT INTO moderation_reports(video_id,reporter_id,reason) VALUES($1,$2,$3)',
+      [req.params.id, req.user.id, reason]
+    );
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Admin: get all moderation reports
+app.get('/api/admin/reports', auth, async (req, res) => {
+  const isOwner = req.user.username && req.user.username.toLowerCase() === OWNER_USERNAME.toLowerCase();
+  if (!isOwner) return res.status(403).json({ error: 'Нет доступа' });
+  try {
+    const { rows } = await pool.query(`
+      SELECT r.*, v.title as video_title, v.video_url, u.username as reporter_name,
+             vu.username as video_author
+      FROM moderation_reports r
+      LEFT JOIN videos v ON v.id=r.video_id
+      LEFT JOIN users u ON u.id=r.reporter_id
+      LEFT JOIN users vu ON vu.id=v.user_id
+      WHERE r.status='pending'
+      ORDER BY r.created_at DESC
+    `);
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Admin: resolve report
+app.post('/api/admin/reports/:id/resolve', auth, async (req, res) => {
+  const isOwner = req.user.username && req.user.username.toLowerCase() === OWNER_USERNAME.toLowerCase();
+  if (!isOwner) return res.status(403).json({ error: 'Нет доступа' });
+  const { action } = req.body; // 'dismiss' or 'delete'
+  try {
+    const { rows } = await pool.query('SELECT * FROM moderation_reports WHERE id=$1', [req.params.id]);
+    if (!rows[0]) return res.status(404).json({ error: 'Не найдено' });
+    if (action === 'delete') {
+      const vid = await pool.query('SELECT * FROM videos WHERE id=$1', [rows[0].video_id]);
+      if (vid.rows[0] && vid.rows[0].cloudinary_id) {
+        await cloudinary.uploader.destroy(vid.rows[0].cloudinary_id, { resource_type: 'video' }).catch(() => {});
+      }
+      await pool.query('DELETE FROM videos WHERE id=$1', [rows[0].video_id]);
+    }
+    await pool.query('UPDATE moderation_reports SET status=$1 WHERE id=$2', [action === 'delete' ? 'deleted' : 'dismissed', req.params.id]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } });
 app.post('/api/videos/upload', auth, upload.single('video'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Файл не выбран' });
   const { title, description = '', category = 'other' } = req.body;
   if (!title) return res.status(400).json({ error: 'Укажи название' });
+
+  // Moderation: check title and description for bad content
+  if (containsBadWords(title) || containsBadWords(description)) {
+    return res.status(400).json({ error: '🚫 Контент нарушает правила CosmоVibe. Видео не опубликовано.' });
+  }
+
+  // Rate limit (owner is exempt)
+  const isOwner = req.user.username && req.user.username.toLowerCase() === OWNER_USERNAME.toLowerCase();
+  if (!isOwner) {
+    const limit = await checkUploadLimit(req.user.id);
+    if (limit.limited) {
+      return res.status(429).json({ error: `⏳ Лимит 3 видео / 5 часов. Следующая загрузка через ${limit.timeStr}.` });
+    }
+  }
+
   try {
     const result = await new Promise((ok, fail) => {
       const s = cloudinary.uploader.upload_stream({
