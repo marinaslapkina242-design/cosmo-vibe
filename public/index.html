@@ -142,7 +142,37 @@ body::before {
 .user-dropdown-item.danger:hover { background:rgba(255,77,109,.1); }
 .dropdown-divider { height:1px; background:var(--border); margin:4px 0; }
 
-/* ── BADGES ── */
+/* ── RULES MODAL ── */
+.rules-item { display:flex; align-items:flex-start; gap:14px; padding:12px 14px; background:rgba(255,255,255,.03); border:1px solid var(--border); border-radius:12px; }
+.rules-icon { width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.rules-accept-row { display:flex; align-items:center; gap:10px; padding:10px 14px; background:rgba(124,92,252,.07); border:1px solid var(--border); border-radius:10px; cursor:pointer; margin-top:4px; }
+.rules-accept-row input[type=checkbox] { width:16px; height:16px; accent-color:var(--accent); cursor:pointer; }
+#rulesAcceptBtn:disabled { opacity:.4; cursor:not-allowed; }
+
+/* ── UPLOAD LIMIT BAR ── */
+.upload-limit-bar { padding:10px 14px; border-radius:10px; font-size:12px; display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+.upload-limit-ok { background:rgba(0,212,255,.07); border:1px solid rgba(0,212,255,.25); color:var(--accent3); }
+.upload-limit-warn { background:rgba(255,215,0,.07); border:1px solid rgba(255,215,0,.3); color:var(--gold); }
+.upload-limit-full { background:rgba(255,77,109,.08); border:1px solid rgba(255,77,109,.35); color:var(--danger); }
+
+/* ── REPORT ── */
+.report-reason-btn { padding:10px 14px; background:rgba(255,255,255,.04); border:1px solid var(--border); border-radius:10px; cursor:pointer; font-size:13px; transition:all .2s; }
+.report-reason-btn:hover, .report-reason-btn.selected { background:rgba(124,92,252,.15); border-color:var(--accent); color:var(--star); }
+
+/* ── MOD PANEL ── */
+.mod-card { padding:14px; background:var(--bg3); border:1px solid var(--border); border-radius:12px; }
+.mod-card-title { font-weight:600; color:var(--star); font-size:14px; margin-bottom:4px; }
+.mod-card-meta { font-size:12px; color:var(--muted); margin-bottom:10px; }
+.mod-card-reason { font-size:12px; padding:6px 10px; background:rgba(255,77,109,.1); border:1px solid rgba(255,77,109,.25); border-radius:8px; color:var(--danger); margin-bottom:10px; display:inline-block; }
+.mod-actions { display:flex; gap:8px; }
+.mod-btn-del { background:var(--danger); color:#fff; border:none; border-radius:8px; padding:7px 14px; font-size:12px; font-weight:600; cursor:pointer; transition:all .2s; }
+.mod-btn-del:hover { box-shadow:0 0 14px rgba(255,77,109,.5); }
+.mod-btn-ok { background:rgba(0,212,255,.12); color:var(--accent3); border:1px solid rgba(0,212,255,.3); border-radius:8px; padding:7px 14px; font-size:12px; font-weight:600; cursor:pointer; transition:all .2s; }
+.mod-btn-ok:hover { background:rgba(0,212,255,.2); }
+
+/* ── REPORT BTN in player ── */
+.report-video-btn { background:none; border:none; color:var(--muted); font-size:12px; cursor:pointer; padding:4px 8px; border-radius:6px; transition:all .2s; display:flex; align-items:center; gap:4px; margin-left:auto; }
+.report-video-btn:hover { color:var(--danger); background:rgba(255,77,109,.1); }
 .badge-check { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; margin-left:3px; flex-shrink:0; vertical-align:middle; position:relative; top:-1px; }
 .badge-check svg { width:9px; height:9px; }
 .badge-grey  { background:#888aaa; box-shadow:0 0 6px rgba(136,136,170,0.5); }
@@ -573,6 +603,10 @@ textarea.form-input { resize:vertical; min-height:80px; }
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="20 6 9 17 4 12"/></svg>
           Как получить галочку
         </div>
+        <div class="user-dropdown-item" id="modPanelBtn" style="display:none;color:var(--danger)" onclick="openMod()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          Модерация
+        </div>
         <div class="dropdown-divider"></div>
         <div class="user-dropdown-item danger" onclick="logout()">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
@@ -732,6 +766,10 @@ textarea.form-input { resize:vertical; min-height:80px; }
       <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
       <div class="progress-text" id="progressText"></div>
     </div>
+    <div id="uploadLimitBar" class="upload-limit-bar upload-limit-ok" style="display:none">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      <span id="uploadLimitText"></span>
+    </div>
     <div class="form-group"><label class="form-label">Название</label><input class="form-input" type="text" id="vidTitle" placeholder="Название видео..."></div>
     <div class="form-group"><label class="form-label">Описание</label><textarea class="form-input" id="vidDesc" placeholder="О чём это видео..."></textarea></div>
     <div class="form-group">
@@ -760,6 +798,10 @@ textarea.form-input { resize:vertical; min-height:80px; }
           <button class="like-btn" id="likeBtn" onclick="toggleLike()">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
             <span id="likeCount">0</span>
+          </button>
+          <button class="report-video-btn" id="reportVideoBtn" onclick="openReport()" style="display:none" title="Пожаловаться">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+            Пожаловаться
           </button>
         </div>
       </div>
@@ -845,6 +887,91 @@ textarea.form-input { resize:vertical; min-height:80px; }
   </div>
 </div>
 
+<!-- RULES MODAL -->
+<div class="overlay" id="rulesModal" style="z-index:9999">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-header" style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:0">
+      <span class="modal-title" style="font-size:16px;display:flex;align-items:center;gap:10px">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Правила CosmоVibe
+      </span>
+    </div>
+    <div style="padding:20px 0 4px;display:flex;flex-direction:column;gap:12px">
+      <div style="text-align:center;margin-bottom:6px">
+        <div style="font-size:13px;color:var(--muted);line-height:1.6">Добро пожаловать в галактику! Прочитай правила перед тем как начать.</div>
+      </div>
+      <div class="rules-item">
+        <div class="rules-icon" style="background:rgba(0,212,255,.12);color:var(--accent3)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        </div>
+        <div><b style="color:var(--star)">Уважай других</b><br><span style="font-size:12px;color:var(--muted)">Будь вежлив, не оскорбляй других пользователей.</span></div>
+      </div>
+      <div class="rules-item">
+        <div class="rules-icon" style="background:rgba(255,77,109,.12);color:var(--danger)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+        </div>
+        <div><b style="color:var(--star)">Никакого 18+ контента</b><br><span style="font-size:12px;color:var(--muted)">Запрещены видео сексуального, эротического или насильственного характера.</span></div>
+      </div>
+      <div class="rules-item">
+        <div class="rules-icon" style="background:rgba(255,77,109,.12);color:var(--danger)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+        </div>
+        <div><b style="color:var(--star)">Нет неприемлемому контенту</b><br><span style="font-size:12px;color:var(--muted)">Запрещены видео с экстремизмом, ненавистью, дискриминацией.</span></div>
+      </div>
+      <div class="rules-item">
+        <div class="rules-icon" style="background:rgba(124,92,252,.12);color:var(--accent2)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        </div>
+        <div><b style="color:var(--star)">Лимит загрузки</b><br><span style="font-size:12px;color:var(--muted)">Не более <b style="color:var(--accent2)">3 видео каждые 5 часов</b>. После 3 загрузок нужно подождать.</span></div>
+      </div>
+      <div class="rules-item">
+        <div class="rules-icon" style="background:rgba(255,215,0,.1);color:var(--gold)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        </div>
+        <div><b style="color:var(--star)">Нарушения модерируются</b><br><span style="font-size:12px;color:var(--muted)">Неприемлемые видео удаляются модерацией. При систематических нарушениях — блокировка.</span></div>
+      </div>
+      <label class="rules-accept-row" id="rulesAcceptRow">
+        <input type="checkbox" id="rulesCheck" onchange="document.getElementById('rulesAcceptBtn').disabled=!this.checked">
+        <span style="font-size:13px;color:var(--text)">Я прочитал(а) и принимаю правила CosmоVibe</span>
+      </label>
+    </div>
+    <button class="form-btn" id="rulesAcceptBtn" disabled onclick="acceptRules()" style="margin-top:16px">ПРИНЯТЬ И ВОЙТИ В ГАЛАКТИКУ</button>
+  </div>
+</div>
+
+<!-- REPORT MODAL -->
+<div class="overlay" id="reportModal">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-header">
+      <span class="modal-title">Пожаловаться на видео</span>
+      <button class="close-btn" onclick="closeReport()">✕</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">
+      <div class="report-reason-btn" onclick="selectReason(this,'18+ / эротический контент')">🔞 18+ / эротический контент</div>
+      <div class="report-reason-btn" onclick="selectReason(this,'Насилие / жестокость')">⚠️ Насилие / жестокость</div>
+      <div class="report-reason-btn" onclick="selectReason(this,'Экстремизм / ненависть')">🚫 Экстремизм / ненависть</div>
+      <div class="report-reason-btn" onclick="selectReason(this,'Спам / реклама')">📢 Спам / реклама</div>
+      <div class="report-reason-btn" onclick="selectReason(this,'Другое')">❓ Другое</div>
+    </div>
+    <div class="form-err" id="reportErr"></div>
+    <button class="form-btn" id="reportSubmit" onclick="sendReport()" disabled>ОТПРАВИТЬ ЖАЛОБУ</button>
+  </div>
+</div>
+
+<!-- MODERATION PANEL (only for Maksim) -->
+<div class="overlay" id="modPanel">
+  <div class="modal" style="max-width:680px;max-height:80vh;display:flex;flex-direction:column">
+    <div class="modal-header">
+      <span class="modal-title" style="display:flex;align-items:center;gap:8px">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Панель модерации
+      </span>
+      <button class="close-btn" onclick="closeMod()">✕</button>
+    </div>
+    <div id="modList" style="overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:10px;padding:4px 0"></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -901,7 +1028,23 @@ window.onload = () => {
   loadVideos();
   if (token) { pollNotifs(); loadSidebarSubs(); }
   loadAllChannels();
+  // Show rules on first visit
+  if (!localStorage.getItem('cv_rules_accepted')) {
+    document.getElementById('rulesModal').classList.add('open');
+  }
 };
+
+function acceptRules() {
+  localStorage.setItem('cv_rules_accepted', '1');
+  document.getElementById('rulesModal').classList.remove('open');
+}
+
+// Show rules again anytime (optional)
+function showRules() {
+  document.getElementById('rulesCheck').checked = false;
+  document.getElementById('rulesAcceptBtn').disabled = true;
+  document.getElementById('rulesModal').classList.add('open');
+}
 
 function updateUI() {
   const ok = !!token;
@@ -922,6 +1065,9 @@ function updateUI() {
     }
     document.getElementById('dropdownNameText').textContent = currentUser.username;
     fetchMySubCount();
+    // Show mod panel button only for Maksim
+    const modBtn = document.getElementById('modPanelBtn');
+    if (modBtn) modBtn.style.display = isOwner(currentUser.username) ? '' : 'none';
   }
   const area = document.getElementById('commentInputArea');
   if (area) area.innerHTML = ok
@@ -1263,6 +1409,9 @@ async function openPlayer(id) {
     document.getElementById('mainVideo').src = v.video_url;
     document.getElementById('playerOverlay').classList.add('open');
     document.body.style.overflow = 'hidden';
+    // Show report button for logged-in users (not for video owner)
+    const reportBtn = document.getElementById('reportVideoBtn');
+    if (reportBtn) reportBtn.style.display = (token && currentUser && currentUser.id !== v.user_id) ? 'flex' : 'none';
     loadComments(id);
   } catch(e) { toast('Ошибка открытия видео'); }
 }
@@ -1552,10 +1701,32 @@ function goHome() {
 }
 
 // ── UPLOAD ──
-function openUpload() {
+async function openUpload() {
   document.getElementById('userDropdown').classList.remove('open');
   if (!token) { openAuth(); return; }
   document.getElementById('uploadModal').classList.add('open');
+  // Check upload limit
+  try {
+    const status = await api('/api/videos/upload-status');
+    const bar = document.getElementById('uploadLimitBar');
+    const txt = document.getElementById('uploadLimitText');
+    const submitBtn = document.getElementById('uploadSubmit');
+    bar.style.display = 'flex';
+    if (status.isOwner) {
+      bar.className = 'upload-limit-bar upload-limit-ok';
+      txt.textContent = 'Создатель — без ограничений';
+      submitBtn.disabled = false;
+    } else if (status.limited) {
+      bar.className = 'upload-limit-bar upload-limit-full';
+      txt.textContent = `Лимит исчерпан. Следующая загрузка через ${status.timeStr}`;
+      submitBtn.disabled = true;
+    } else {
+      const left = status.remaining;
+      bar.className = left <= 1 ? 'upload-limit-bar upload-limit-warn' : 'upload-limit-bar upload-limit-ok';
+      txt.textContent = `Осталось загрузок: ${left} из 3 (обновляется каждые 5 часов)`;
+      submitBtn.disabled = false;
+    }
+  } catch {}
 }
 function closeUpload() {
   document.getElementById('uploadModal').classList.remove('open');
@@ -1643,7 +1814,72 @@ function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200);}
 function showErr(id,msg){const el=document.getElementById(id);el.textContent=msg;el.classList.add('show');}
 
-['authModal','uploadModal','allChannelsModal','badgeModal','renameModal'].forEach(id=>{
+// ── REPORT ──
+let selectedReportReason = '';
+function openReport() {
+  if (!token) { openAuth(); return; }
+  selectedReportReason = '';
+  document.querySelectorAll('.report-reason-btn').forEach(b => b.classList.remove('selected'));
+  document.getElementById('reportErr').classList.remove('show');
+  document.getElementById('reportSubmit').disabled = true;
+  document.getElementById('reportModal').classList.add('open');
+}
+function closeReport() { document.getElementById('reportModal').classList.remove('open'); }
+function selectReason(el, reason) {
+  document.querySelectorAll('.report-reason-btn').forEach(b => b.classList.remove('selected'));
+  el.classList.add('selected');
+  selectedReportReason = reason;
+  document.getElementById('reportSubmit').disabled = false;
+}
+async function sendReport() {
+  if (!selectedReportReason || !currentVideo) return;
+  try {
+    await api(`/api/videos/${currentVideo.id}/report`, { method:'POST', body: JSON.stringify({ reason: selectedReportReason }) });
+    closeReport();
+    toast('Жалоба отправлена. Модератор рассмотрит её.');
+  } catch(e) { showErr('reportErr', e.message); }
+}
+
+// ── MODERATION PANEL ──
+async function openMod() {
+  document.getElementById('userDropdown').classList.remove('open');
+  document.getElementById('modPanel').classList.add('open');
+  const list = document.getElementById('modList');
+  list.innerHTML = '<div style="color:var(--muted);padding:20px;text-align:center">Загрузка жалоб...</div>';
+  try {
+    const reports = await api('/api/admin/reports');
+    if (!reports.length) {
+      list.innerHTML = '<div style="color:var(--muted);padding:30px;text-align:center">🎉 Жалоб нет — всё чисто!</div>';
+      return;
+    }
+    list.innerHTML = reports.map(r => `
+      <div class="mod-card" id="modcard-${r.id}">
+        <div class="mod-card-title">${esc(r.video_title || 'Видео удалено')}</div>
+        <div class="mod-card-meta">
+          Автор видео: <b>${esc(r.video_author || '—')}</b> · Жалоба от: <b>${esc(r.reporter_name || 'аноним')}</b><br>
+          ${timeAgo(new Date(r.created_at))}
+        </div>
+        <div class="mod-card-reason">${esc(r.reason)}</div>
+        <div class="mod-actions">
+          <button class="mod-btn-del" onclick="resolveReport(${r.id},'delete')">🗑 Удалить видео</button>
+          <button class="mod-btn-ok" onclick="resolveReport(${r.id},'dismiss')">✓ Отклонить жалобу</button>
+        </div>
+      </div>
+    `).join('');
+  } catch(e) { list.innerHTML = '<div style="color:var(--danger);padding:20px">Ошибка загрузки жалоб</div>'; }
+}
+function closeMod() { document.getElementById('modPanel').classList.remove('open'); }
+async function resolveReport(reportId, action) {
+  try {
+    await api(`/api/admin/reports/${reportId}/resolve`, { method:'POST', body: JSON.stringify({ action }) });
+    const card = document.getElementById(`modcard-${reportId}`);
+    if (card) { card.style.opacity='0.4'; card.style.pointerEvents='none'; }
+    toast(action === 'delete' ? 'Видео удалено' : 'Жалоба отклонена');
+    if (action === 'delete') loadVideos();
+  } catch(e) { toast('Ошибка: ' + e.message); }
+}
+
+['authModal','uploadModal','allChannelsModal','badgeModal','renameModal','reportModal','modPanel'].forEach(id=>{
   const el = document.getElementById(id);
   if (el) el.addEventListener('click', e=>{ if(e.target.id===id) el.classList.remove('open'); });
 });
