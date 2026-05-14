@@ -66,17 +66,67 @@ pool.query(`
     status VARCHAR(20) DEFAULT 'pending',
     created_at TIMESTAMP DEFAULT NOW()
   );
+  CREATE TABLE IF NOT EXISTS pending_registrations (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(50) NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    password_hash TEXT NOT NULL,
+    code VARCHAR(6) NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+  );
+  CREATE TABLE IF NOT EXISTS banned_users (
+    id SERIAL PRIMARY KEY,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    username VARCHAR(50),
+    reason TEXT DEFAULT '',
+    banned_at TIMESTAMP DEFAULT NOW()
+  );
 `).then(() => console.log('БД готова')).catch(console.error);
 
 // Migration: add parent_id to comments if missing
 pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS parent_id INTEGER REFERENCES comments(id) ON DELETE CASCADE`).catch(() => {});
 
 const resend = new Resend(process.env.RESEND_API_KEY);
+
+// Отправить владельцу (Maksim) письмо о новом пользователе
 const notifyOwner = (username, email) => resend.emails.send({
-  from: 'CosmоVibe <onboarding@resend.dev>', to: process.env.OWNER_EMAIL,
-  subject: '🌌 НОВЫЙ ПОЛЬЗОВАТЕЛЬ!',
-  html: `<p>Имя: ${username}, Email: ${email}</p>`
+  from: 'CosmоVibe <noreply@cosmovibe.ru>',
+  to: process.env.OWNER_EMAIL,
+  subject: '🌌 НОВЫЙ ПОЛЬЗОВАТЕЛЬ CosmоVibe',
+  html: `
+    <div style="font-family:sans-serif;background:#04040f;color:#f0ecff;padding:24px;border-radius:12px">
+      <h2 style="color:#7c5cfc;margin:0 0 16px">🚀 Новая регистрация</h2>
+      <p><b>Имя:</b> ${username}</p>
+      <p><b>Email:</b> ${email}</p>
+      <p><b>Время:</b> ${new Date().toLocaleString('ru')}</p>
+      <hr style="border-color:#7c5cfc33;margin:16px 0">
+      <p style="font-size:12px;color:#6b65a0">CosmоVibe — панель модерации доступна в меню Maksim</p>
+    </div>
+  `
 }).catch(() => {});
+
+// Отправить код верификации на email
+function generateCode() { return String(Math.floor(100000 + Math.random() * 900000)); }
+
+async function sendVerificationCode(email, username, code) {
+  return resend.emails.send({
+    from: 'CosmоVibe <noreply@cosmovibe.ru>',
+    to: email,
+    subject: `${code} — твой код для входа в CosmоVibe`,
+    html: `
+      <div style="font-family:sans-serif;background:#04040f;color:#f0ecff;padding:32px;border-radius:16px;max-width:480px">
+        <h1 style="color:#7c5cfc;font-size:24px;margin:0 0 8px">CosmоVibe 🌌</h1>
+        <p style="color:#6b65a0;margin:0 0 24px">Подтверждение регистрации</p>
+        <p style="margin:0 0 16px">Привет, <b>${username}</b>! Введи этот код чтобы завершить регистрацию:</p>
+        <div style="background:#141432;border:2px solid #7c5cfc;border-radius:12px;padding:20px;text-align:center;margin:0 0 20px">
+          <span style="font-size:36px;font-weight:700;letter-spacing:10px;color:#b48aff">${code}</span>
+        </div>
+        <p style="color:#6b65a0;font-size:13px">Код действует <b>15 минут</b>. Если это был не ты — просто проигнорируй письмо.</p>
+      </div>
+    `
+  });
+}
 
 cloudinary.config({ cloud_name: process.env.CLOUDINARY_CLOUD_NAME, api_key: process.env.CLOUDINARY_API_KEY, api_secret: process.env.CLOUDINARY_API_SECRET });
 
@@ -98,18 +148,73 @@ async function createNotification(userId, fromUserId, type, videoId = null, comm
   ).catch(() => {});
 }
 
-// AUTH
+// AUTH — STEP 1: Request registration (sends verification code)
 app.post('/api/auth/register', async (req, res) => {
   const { username, email, password } = req.body;
   if (!username || !email || !password) return res.status(400).json({ error: 'Заполни все поля' });
   if (password.length < 6) return res.status(400).json({ error: 'Пароль минимум 6 символов' });
+  if (username.length < 2 || username.length > 50) return res.status(400).json({ error: 'Имя: 2–50 символов' });
+
+  // Basic email format check
+  const emailRx = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+  if (!emailRx.test(email)) return res.status(400).json({ error: 'Некорректный email' });
+
+  // Check if email domain looks real (no obvious fake TLDs)
+  const fakeDomains = ['mailinator.com','guerrillamail.com','throwam.com','tempmail.com','10minutemail.com','yopmail.com','trashmail.com','sharklasers.com','spam4.me','maildrop.cc'];
+  const domain = email.split('@')[1]?.toLowerCase();
+  if (fakeDomains.includes(domain)) return res.status(400).json({ error: 'Временные email-адреса не допускаются' });
+
   try {
+    // Check ban list
+    const banned = await pool.query('SELECT 1 FROM banned_users WHERE email=$1', [email.toLowerCase()]);
+    if (banned.rows.length) return res.status(403).json({ error: '🚫 Этот аккаунт заблокирован' });
+
     const exists = await pool.query('SELECT id FROM users WHERE email=$1 OR username=$2', [email, username]);
     if (exists.rows.length) return res.status(409).json({ error: 'Email или имя уже заняты' });
+
     const hash = await bcrypt.hash(password, 10);
-    const { rows } = await pool.query('INSERT INTO users(username,email,password_hash) VALUES($1,$2,$3) RETURNING *', [username, email, hash]);
-    notifyOwner(username, email);
-    res.json({ token: makeToken(rows[0]), user: { id: rows[0].id, username: rows[0].username } });
+    const code = generateCode();
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+
+    // Remove old pending for this email
+    await pool.query('DELETE FROM pending_registrations WHERE email=$1', [email]);
+    await pool.query(
+      'INSERT INTO pending_registrations(username,email,password_hash,code,expires_at) VALUES($1,$2,$3,$4,$5)',
+      [username, email, hash, code, expiresAt]
+    );
+
+    await sendVerificationCode(email, username, code);
+    res.json({ pending: true, message: 'Код отправлен на почту' });
+  } catch (e) {
+    console.error('Register error:', e);
+    res.status(500).json({ error: 'Ошибка отправки кода. Проверь email.' });
+  }
+});
+
+// AUTH — STEP 2: Verify code and create account
+app.post('/api/auth/verify', async (req, res) => {
+  const { email, code } = req.body;
+  if (!email || !code) return res.status(400).json({ error: 'Неверные данные' });
+  try {
+    const { rows } = await pool.query(
+      'SELECT * FROM pending_registrations WHERE email=$1 AND code=$2 AND expires_at > NOW()',
+      [email, code.trim()]
+    );
+    if (!rows[0]) return res.status(400).json({ error: 'Неверный или истёкший код' });
+
+    const p = rows[0];
+    // Double-check user doesn't exist yet
+    const exists = await pool.query('SELECT id FROM users WHERE email=$1 OR username=$2', [p.email, p.username]);
+    if (exists.rows.length) return res.status(409).json({ error: 'Аккаунт уже существует' });
+
+    const { rows: newUser } = await pool.query(
+      'INSERT INTO users(username,email,password_hash) VALUES($1,$2,$3) RETURNING *',
+      [p.username, p.email, p.password_hash]
+    );
+    await pool.query('DELETE FROM pending_registrations WHERE email=$1', [p.email]);
+
+    notifyOwner(p.username, p.email);
+    res.json({ token: makeToken(newUser[0]), user: { id: newUser[0].id, username: newUser[0].username } });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -522,6 +627,58 @@ app.post('/api/auth/rename', auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// LOGIN: return subscriberCount
+// ADMIN: get all users (for Maksim)
+app.get('/api/admin/users', auth, async (req, res) => {
+  const isOwner = req.user.username?.toLowerCase() === OWNER_USERNAME.toLowerCase();
+  if (!isOwner) return res.status(403).json({ error: 'Нет доступа' });
+  try {
+    const { rows } = await pool.query(`
+      SELECT u.id, u.username, u.email, u.created_at,
+        (SELECT COUNT(*) FROM videos WHERE user_id=u.id) as video_count,
+        (SELECT COUNT(*) FROM subscriptions WHERE target_id=u.id) as subscriber_count,
+        CASE WHEN b.email IS NOT NULL THEN true ELSE false END as is_banned
+      FROM users u
+      LEFT JOIN banned_users b ON b.email=u.email
+      ORDER BY u.created_at DESC
+    `);
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ADMIN: ban user
+app.post('/api/admin/ban/:userId', auth, async (req, res) => {
+  const isOwner = req.user.username?.toLowerCase() === OWNER_USERNAME.toLowerCase();
+  if (!isOwner) return res.status(403).json({ error: 'Нет доступа' });
+  const { reason = '' } = req.body;
+  try {
+    const { rows } = await pool.query('SELECT * FROM users WHERE id=$1', [req.params.userId]);
+    if (!rows[0]) return res.status(404).json({ error: 'Пользователь не найден' });
+    const u = rows[0];
+    if (u.username.toLowerCase() === OWNER_USERNAME.toLowerCase()) return res.status(400).json({ error: 'Нельзя забанить создателя' });
+    await pool.query(
+      'INSERT INTO banned_users(email,username,reason) VALUES($1,$2,$3) ON CONFLICT(email) DO UPDATE SET reason=$3',
+      [u.email, u.username, reason]
+    );
+    // Delete all their videos from cloudinary + DB
+    const vids = await pool.query('SELECT cloudinary_id FROM videos WHERE user_id=$1', [u.id]);
+    for (const v of vids.rows) {
+      if (v.cloudinary_id) await cloudinary.uploader.destroy(v.cloudinary_id, { resource_type: 'video' }).catch(() => {});
+    }
+    await pool.query('DELETE FROM users WHERE id=$1', [u.id]);
+    res.json({ ok: true, username: u.username });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ADMIN: unban email
+app.post('/api/admin/unban', auth, async (req, res) => {
+  const isOwner = req.user.username?.toLowerCase() === OWNER_USERNAME.toLowerCase();
+  if (!isOwner) return res.status(403).json({ error: 'Нет доступа' });
+  const { email } = req.body;
+  try {
+    await pool.query('DELETE FROM banned_users WHERE email=$1', [email]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 app.listen(process.env.PORT || 3000, () => console.log('🚀 CosmоVibe запущен'));
