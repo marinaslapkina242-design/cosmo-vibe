@@ -220,6 +220,21 @@ body::before {
   font-family:'Inter',sans-serif; font-weight:500;
 }
 .report-video-btn:hover { color:var(--danger); background:rgba(255,77,109,.15); border-color:rgba(255,77,109,0.4); box-shadow:0 0 14px rgba(255,77,109,0.15); }
+
+/* ── USER MANAGEMENT ── */
+.user-mgmt-card { display:flex; align-items:center; gap:12px; padding:12px 14px; background:var(--bg3); border:1px solid var(--border); border-radius:12px; }
+.user-mgmt-card.banned { opacity:.55; border-color:rgba(255,77,109,.3); background:rgba(255,77,109,.04); }
+.user-mgmt-avatar { width:38px; height:38px; border-radius:50%; background:linear-gradient(135deg,var(--accent),var(--accent2)); display:flex; align-items:center; justify-content:center; font-size:15px; font-weight:700; color:#fff; flex-shrink:0; }
+.user-mgmt-info { flex:1; min-width:0; }
+.user-mgmt-name { font-weight:600; color:var(--star); font-size:14px; display:flex; align-items:center; gap:6px; }
+.user-mgmt-email { font-size:11px; color:var(--muted); margin-top:1px; }
+.user-mgmt-stats { font-size:11px; color:var(--muted); margin-top:2px; }
+.ban-btn { background:rgba(255,77,109,.15); color:var(--danger); border:1px solid rgba(255,77,109,.3); border-radius:8px; padding:6px 12px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap; transition:all .2s; }
+.ban-btn:hover { background:var(--danger); color:#fff; box-shadow:0 0 12px rgba(255,77,109,.4); }
+.unban-btn { background:rgba(0,212,255,.1); color:var(--accent3); border:1px solid rgba(0,212,255,.25); border-radius:8px; padding:6px 12px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap; transition:all .2s; }
+.unban-btn:hover { background:rgba(0,212,255,.2); }
+#regCode { text-align:center; font-size:26px; letter-spacing:8px; font-weight:700; }
+#regCode:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(124,92,252,.15); }
 .badge-check { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; margin-left:3px; flex-shrink:0; vertical-align:middle; position:relative; top:-1px; }
 .badge-check svg { width:9px; height:9px; }
 .badge-grey  { background:#888aaa; box-shadow:0 0 6px rgba(136,136,170,0.5); }
@@ -785,6 +800,10 @@ textarea.form-input { resize:vertical; min-height:80px; }
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
           Модерация
         </div>
+        <div class="user-dropdown-item" id="usersPanelBtn" style="display:none;color:var(--accent2)" onclick="openUsers()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          Пользователи
+        </div>
         <div class="dropdown-divider"></div>
         <div class="user-dropdown-item danger" onclick="logout()">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
@@ -917,11 +936,36 @@ textarea.form-input { resize:vertical; min-height:80px; }
       <button class="form-btn" id="loginSubmit" onclick="doLogin()">ВОЙТИ В ГАЛАКТИКУ</button>
     </div>
     <div id="regForm" style="display:none">
-      <div class="form-group"><label class="form-label">Имя пользователя</label><input class="form-input" type="text" id="regName" placeholder="cosmonaut42"></div>
-      <div class="form-group"><label class="form-label">Email</label><input class="form-input" type="email" id="regEmail" placeholder="you@cosmos.space"></div>
-      <div class="form-group"><label class="form-label">Пароль</label><input class="form-input" type="password" id="regPass" placeholder="мин. 6 символов" onkeydown="if(event.key==='Enter')doRegister()"></div>
-      <div class="form-err" id="regErr"></div>
-      <button class="form-btn" id="regSubmit" onclick="doRegister()">НАЧАТЬ ПУТЬ</button>
+      <!-- Step 1: fill in details -->
+      <div id="regStep1">
+        <div class="form-group"><label class="form-label">Имя пользователя</label><input class="form-input" type="text" id="regName" placeholder="cosmonaut42"></div>
+        <div class="form-group"><label class="form-label">Email</label><input class="form-input" type="email" id="regEmail" placeholder="you@cosmos.space"></div>
+        <div class="form-group"><label class="form-label">Пароль</label><input class="form-input" type="password" id="regPass" placeholder="мин. 6 символов" onkeydown="if(event.key==='Enter')doRegister()"></div>
+        <div class="form-err" id="regErr"></div>
+        <button class="form-btn" id="regSubmit" onclick="doRegister()">ОТПРАВИТЬ КОД</button>
+      </div>
+      <!-- Step 2: enter verification code -->
+      <div id="regStep2" style="display:none">
+        <div style="text-align:center;margin-bottom:20px">
+          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--accent2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:10px"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+          <div style="font-size:15px;font-weight:600;color:var(--star);margin-bottom:6px">Проверь почту!</div>
+          <div style="font-size:13px;color:var(--muted)">Мы отправили 6-значный код на<br><b id="regEmailDisplay" style="color:var(--accent2)"></b></div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Код подтверждения</label>
+          <input class="form-input" type="text" id="regCode" placeholder="000000" maxlength="6"
+            style="text-align:center;font-size:24px;letter-spacing:8px;font-weight:700"
+            oninput="this.value=this.value.replace(/\D/g,'')"
+            onkeydown="if(event.key==='Enter')doVerify()">
+        </div>
+        <div class="form-err" id="verifyErr"></div>
+        <button class="form-btn" id="verifySubmit" onclick="doVerify()">ПОДТВЕРДИТЬ И ВОЙТИ</button>
+        <div style="text-align:center;margin-top:12px">
+          <span style="font-size:12px;color:var(--muted);cursor:pointer" onclick="backToReg()">← Назад</span>
+          <span style="font-size:12px;color:var(--muted);margin:0 8px">·</span>
+          <span style="font-size:12px;color:var(--accent2);cursor:pointer" onclick="doRegister()">Отправить код ещё раз</span>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -1176,6 +1220,21 @@ textarea.form-input { resize:vertical; min-height:80px; }
   </div>
 </div>
 
+<!-- USERS PANEL (only Maksim) -->
+<div class="overlay" id="usersPanel">
+  <div class="modal" style="max-width:720px;max-height:82vh;display:flex;flex-direction:column">
+    <div class="modal-header">
+      <span class="modal-title" style="display:flex;align-items:center;gap:8px">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Все пользователи
+      </span>
+      <button class="close-btn" onclick="closeUsers()">✕</button>
+    </div>
+    <input class="form-input" id="usersSearch" placeholder="Поиск по нику или email..." oninput="filterUsers(this.value)" style="margin-bottom:14px">
+    <div id="usersList" style="overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:8px"></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -1272,6 +1331,8 @@ function updateUI() {
     // Show mod panel button only for Maksim
     const modBtn = document.getElementById('modPanelBtn');
     if (modBtn) modBtn.style.display = isOwner(currentUser.username) ? '' : 'none';
+    const usersBtn = document.getElementById('usersPanelBtn');
+    if (usersBtn) usersBtn.style.display = isOwner(currentUser.username) ? '' : 'none';
   }
   const area = document.getElementById('commentInputArea');
   if (area) area.innerHTML = ok
@@ -1399,6 +1460,11 @@ function switchTab(t) {
   document.getElementById('regForm').style.display = t==='register' ? '' : 'none';
   document.getElementById('tabLogin').classList.toggle('active', t==='login');
   document.getElementById('tabReg').classList.toggle('active', t==='register');
+  if (t === 'register') {
+    document.getElementById('regStep1').style.display = '';
+    document.getElementById('regStep2').style.display = 'none';
+    document.getElementById('regCode').value = '';
+  }
 }
 
 async function doLogin() {
@@ -1421,6 +1487,8 @@ async function doLogin() {
   finally { btn.disabled=false; btn.textContent='ВОЙТИ В ГАЛАКТИКУ'; }
 }
 
+let pendingRegEmail = '';
+
 async function doRegister() {
   const username=document.getElementById('regName').value.trim();
   const email=document.getElementById('regEmail').value.trim();
@@ -1428,15 +1496,39 @@ async function doRegister() {
   const btn=document.getElementById('regSubmit'), err=document.getElementById('regErr');
   err.classList.remove('show');
   if (!username||!email||!password) { err.textContent='Заполни все поля'; err.classList.add('show'); return; }
-  btn.disabled=true; btn.textContent='Создаём...';
+  btn.disabled=true; btn.textContent='Отправляем код...';
   try {
-    const data = await api('/api/auth/register', { method:'POST', body: JSON.stringify({username,email,password}) });
+    await api('/api/auth/register', { method:'POST', body: JSON.stringify({username,email,password}) });
+    pendingRegEmail = email;
+    document.getElementById('regEmailDisplay').textContent = email;
+    document.getElementById('regStep1').style.display = 'none';
+    document.getElementById('regStep2').style.display = '';
+    document.getElementById('regCode').focus();
+  } catch(e) { err.textContent=e.message; err.classList.add('show'); }
+  finally { btn.disabled=false; btn.textContent='ОТПРАВИТЬ КОД'; }
+}
+
+async function doVerify() {
+  const code = document.getElementById('regCode').value.trim();
+  const btn = document.getElementById('verifySubmit'), err = document.getElementById('verifyErr');
+  err.classList.remove('show');
+  if (!code || code.length !== 6) { err.textContent='Введи 6-значный код'; err.classList.add('show'); return; }
+  btn.disabled=true; btn.textContent='Проверяем...';
+  try {
+    const data = await api('/api/auth/verify', { method:'POST', body: JSON.stringify({ email: pendingRegEmail, code }) });
     token=data.token; currentUser=data.user;
     localStorage.setItem('cv_token', token); localStorage.setItem('cv_user', JSON.stringify(currentUser));
     closeAuth(); updateUI(); loadVideos(); pollNotifs(); loadSidebarSubs();
-    toast('Добро пожаловать в галактику!');
+    toast('🚀 Добро пожаловать в галактику, ' + currentUser.username + '!');
   } catch(e) { err.textContent=e.message; err.classList.add('show'); }
-  finally { btn.disabled=false; btn.textContent='НАЧАТЬ ПУТЬ'; }
+  finally { btn.disabled=false; btn.textContent='ПОДТВЕРДИТЬ И ВОЙТИ'; }
+}
+
+function backToReg() {
+  document.getElementById('regStep2').style.display = 'none';
+  document.getElementById('regStep1').style.display = '';
+  document.getElementById('regCode').value = '';
+  document.getElementById('verifyErr').classList.remove('show');
 }
 
 function logout() {
@@ -2092,7 +2184,77 @@ async function resolveReport(reportId, action) {
   } catch(e) { toast('Ошибка: ' + e.message); }
 }
 
-['authModal','uploadModal','allChannelsModal','badgeModal','renameModal','reportModal','modPanel'].forEach(id=>{
+// ── USERS PANEL (Maksim) ──
+let allUsersData = [];
+async function openUsers() {
+  document.getElementById('userDropdown').classList.remove('open');
+  document.getElementById('usersPanel').classList.add('open');
+  document.getElementById('usersList').innerHTML = '<div style="color:var(--muted);padding:20px;text-align:center">Загрузка...</div>';
+  document.getElementById('usersSearch').value = '';
+  try {
+    allUsersData = await api('/api/admin/users');
+    renderUsersList(allUsersData);
+  } catch(e) {
+    document.getElementById('usersList').innerHTML = '<div style="color:var(--danger);padding:20px">Ошибка загрузки</div>';
+  }
+}
+function closeUsers() { document.getElementById('usersPanel').classList.remove('open'); }
+
+function filterUsers(q) {
+  const lower = q.toLowerCase();
+  const filtered = allUsersData.filter(u =>
+    u.username.toLowerCase().includes(lower) || u.email.toLowerCase().includes(lower)
+  );
+  renderUsersList(filtered);
+}
+
+function renderUsersList(users) {
+  const list = document.getElementById('usersList');
+  if (!users.length) { list.innerHTML = '<div style="color:var(--muted);padding:20px;text-align:center">Никого не найдено</div>'; return; }
+  list.innerHTML = users.map(u => {
+    const isMe = isOwner(u.username);
+    const badge = badgeHTML(u.subscriber_count, u.username);
+    const joined = new Date(u.created_at).toLocaleDateString('ru');
+    return `<div class="user-mgmt-card ${u.is_banned ? 'banned' : ''}" id="umgmt-${u.id}">
+      <div class="user-mgmt-avatar">${u.username[0].toUpperCase()}</div>
+      <div class="user-mgmt-info">
+        <div class="user-mgmt-name">
+          ${esc(u.username)}${badge}
+          ${u.is_banned ? '<span style="font-size:10px;background:rgba(255,77,109,.2);color:var(--danger);padding:2px 6px;border-radius:6px;font-weight:600">БАН</span>' : ''}
+          ${isMe ? '<span style="font-size:10px;background:rgba(124,92,252,.2);color:var(--accent2);padding:2px 6px;border-radius:6px">СОЗДАТЕЛЬ</span>' : ''}
+        </div>
+        <div class="user-mgmt-email">${esc(u.email)}</div>
+        <div class="user-mgmt-stats">Видео: ${u.video_count} · Подписчики: ${u.subscriber_count} · Дата: ${joined}</div>
+      </div>
+      ${!isMe ? (u.is_banned
+        ? `<button class="unban-btn" onclick="unbanUser('${esc(u.email)}',${u.id})">Разбанить</button>`
+        : `<button class="ban-btn" onclick="banUser(${u.id},'${esc(u.username)}')">Забанить</button>`
+      ) : ''}
+    </div>`;
+  }).join('');
+}
+
+async function banUser(userId, username) {
+  if (!confirm(`Забанить ${username}? Все его видео будут удалены.`)) return;
+  try {
+    await api(`/api/admin/ban/${userId}`, { method:'POST', body: JSON.stringify({ reason: 'Нарушение правил' }) });
+    toast(`${username} забанен`);
+    allUsersData = allUsersData.map(u => u.id === userId ? { ...u, is_banned: true } : u);
+    renderUsersList(allUsersData);
+    loadVideos();
+  } catch(e) { toast('Ошибка: ' + e.message); }
+}
+
+async function unbanUser(email, userId) {
+  try {
+    await api('/api/admin/unban', { method:'POST', body: JSON.stringify({ email }) });
+    toast('Разблокировано');
+    allUsersData = allUsersData.map(u => u.id === userId ? { ...u, is_banned: false } : u);
+    renderUsersList(allUsersData);
+  } catch(e) { toast('Ошибка: ' + e.message); }
+}
+
+['authModal','uploadModal','allChannelsModal','badgeModal','renameModal','reportModal','modPanel','usersPanel'].forEach(id=>{
   const el = document.getElementById(id);
   if (el) el.addEventListener('click', e=>{ if(e.target.id===id) el.classList.remove('open'); });
 });
